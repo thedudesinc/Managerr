@@ -41,8 +41,8 @@ from plexapi.server import PlexServer, CONFIG
 import argparse
 import requests
 
-PLEX_URL = 'http://192.168.86.4:32400'
-PLEX_TOKEN = 'Ybm6roiLRmnwPrwXMhiA'
+PLEX_URL = 'http://192.168.1.9:32400'
+PLEX_TOKEN = 'ts6CyycZ2tpExnigUWuT'
 
 if not PLEX_URL:
     PLEX_URL = CONFIG.data['auth'].get('server_baseurl', '')

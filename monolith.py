@@ -7,51 +7,84 @@ from discord.ext.tasks import loop
 from requests import Session
 from plexapi.server import PlexServer
 
-# ----setting variable values.
+# ----setting static variable values.
 SESSION = Session()
 SESSION.verify = False
 intents = discord.Intents.default()
 intents.members = True
 client = discord.Client(intents=intents)
-# make reference same folder as script.
-database = r"C:\Users\user\Documents\DiscordBots\PlexVM1-B\PlexInviteManagementBot.db"
-# make reference same folder as script.
-INVITE_SCRIPT_PATH = 'C:/Users/user/Documents/DiscordBots/PlexVM1-B/InviteUser.py'
+database = './newBotDB.db'
+INVITE_SCRIPT_PATH = './InviteUser.py'
+DB_CONNECTION = None
+SERVER = None
+ACCOUNT = None
 # -------- FOR YOU TO FILL OUT --------
-MY_GUILD_ID = 847848325037162516  # your discord server guild ID
-PLEX_URL = 'http://192.168.86.4:32400'  # your plex IP and port number
-PLEX_TOKEN = 'Ybm6roiLRmnwPrwXMhiA'  # your plex token
-ADMINS = ['Mr.Mustard_#2954']  # your discord name, for using admin commands
-BOT_CHAT = "botchat"  # name of your bot chat channel in your discord
-BOT_CHAT_CHANNEL_ID = '847857869214580796'  # ID of your bot chat channel
-SPEEDTEST_CHANNEL_ID = '873265398722752522' # ID of the speedtest channel
-CHECK_INACTIVITY = True  # set to True to enable removal of users based on inactivity
+# MY_GUILD_ID = 1004464978696343593  # your discord server guild ID
+# PLEX_URL = 'http://192.168.1.9:32400'  # your plex IP and port number
+# PLEX_TOKEN = 'ts6CyycZ2tpExnigUWuT'  # your plex token
+# ADMINS = ['Mr.Mustard_#2954']  # your discord name, for using admin commands
+# BOT_CHAT = "chat-with-the-bot"  # name of your bot chat channel in your discord
+# BOT_CHAT_CHANNEL_ID = '1037558436348567642'  # ID of your bot chat channel
+# SPEEDTEST_CHANNEL_ID = '873265398722752522' # ID of the speedtest channel
+# CHECK_INACTIVITY = False  # set to True to enable removal of users based on inactivity
 # -------- If you set CHECK_INACTIVITY to True, update line 522, 523, 526, 528 --------
 # Your discord role names, must have all 3 filled out.
-IRname = "Invited"
-QRname = "Queued"
-RRname = "Removed"
+# IRname = "Invited"
+# QRname = "Queued"
+# RRname = "Removed"
 
+# ********static actions********
+# disables SSL warnings
 if not SESSION.verify:
     # Disable the warning that the request is insecure, we know that...
     from urllib3 import disable_warnings
     from urllib3.exceptions import InsecureRequestWarning
     disable_warnings(InsecureRequestWarning)
 
-SERVER = PlexServer(baseurl=PLEX_URL, token=PLEX_TOKEN, session=SESSION)
-ACCOUNT = SERVER.myPlexAccount()
+# connects to the database
+try:
+    DB_CONNECTION = sqlite3.connect(database)
+except Error as e:
+    print(e)
+
+# ********static actions********
+
+
 
 
 # ----defining db functions below
 
-
-def create_connection(db_file):
-    conn = None
+# initialize Plex Server # info
+def initializePlexServer(NAME, URL, TOKEN, CHECKS_INACTIVITY, INVITED_DISCORD_ROLE, TAUTULLI_URL, 
+TAUTULLI_API_KEY, INACTIVITY_LIMIT, INVITE_ACCEPTANCE_LIMIT):
     try:
-        conn = sqlite3.connect(db_file)
-    except Error as e:
-        print(e)
-    return conn
+        SERVER = PlexServer(baseurl=URL, token=TOKEN, session=SESSION)
+        ACCOUNT = SERVER.myPlexAccount()
+    except Exception as e:
+        print(str(e))
+
+    dateTime = datetime.datetime.now()
+    valuesToSend = None
+    if (CHECKS_INACTIVITY == "YES"):
+        valuesToSend = (NAME, URL, TOKEN, CHECKS_INACTIVITY, INVITED_DISCORD_ROLE, 
+        TAUTULLI_URL, TAUTULLI_API_KEY, INACTIVITY_LIMIT, INVITE_ACCEPTANCE_LIMIT)
+    else:
+        valuesToSend = (NAME, URL, TOKEN, CHECKS_INACTIVITY)
+
+    initializePlexServerInDB(valuesToSend)
+    updateBotActionHistory("initialized Plex Server: " + NAME, dateTime, "MANUAL")
+
+    return
+
+
+def initializePlexServerInDB(values):
+    dateTime = datetime.datetime.now()
+    if (values.CHECKS_INACTIVITT)
+    sql = ''' INSERT INTO CommandHistory(CommandUsed,DiscordServerNickname,DiscordUsername,DateTime,ValuesSent) 
+    VALUES(?,?,?,?,?) '''
+    cur = DB_CONNECTION.cursor()
+    cur.execute(sql, values)
+    return
 
 
 # -----from repeated actions script
@@ -167,6 +200,14 @@ def updateCommandUsageHistory(conn1, commandHistoryAdd):
     VALUES(?,?,?,?,?) '''
     cur = conn1.cursor()
     cur.execute(sql, commandHistoryAdd)
+    return
+
+
+def updateBotActionHistory(values):
+    sql = ''' INSERT INTO BotActionHistory(action,dateTime,automaticOrManual) 
+    VALUES(?,?,?) '''
+    cur = DB_CONNECTION.cursor()
+    cur.execute(sql, values)
     return
 
 
@@ -1441,4 +1482,4 @@ async def on_message(message):
             await messageChannel.send(listplexusersmsg1)
 
 
-client.run("ODQ3ODU1NDI2MDMyNjMxODY5.YLEI5Q.7vW8VvFBCYW7yYylv0HhHyyUBvM")
+client.run("Njk0MjUzODE0NjIyMTkxNjI2.GubGUG.CV7fplMHbquq27Wfn6gwyYzDAruRvqUoTMrhlU")
