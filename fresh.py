@@ -217,8 +217,12 @@ def getBotChannelID(conn):
     return botChannelID
 
 
-def getTotalOpenSpots():
+def getTotalOpenSpots(conn):
     totalOpenSpotsCount = 0
+    plexServers = getListOfPlexServers(conn)
+    for server in plexServers:
+        userCount = getUserCountForPlexServerName(conn, str(server[1]))
+        totalOpenSpotsCount += (100 - userCount)
     return totalOpenSpotsCount
 # endregion
 
@@ -421,8 +425,9 @@ else:
                             values = ("openspots", str(message.author.nick), str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
-                            openspotsCount = getTotalOpenSpots()
-                        await message.channel.send('There are **' + str(openspotsCount) + '** spots open.')
+                            openspotsCount = getTotalOpenSpots(DB_CONNECTION)
+                        await message.reply('There are **' + str(openspotsCount) + '** spots open.',
+                                            mention_author=False)
                     # endregion
 
     # endregion
