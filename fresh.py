@@ -47,10 +47,10 @@ def createDBTables(conn):
     cur5 = conn.cursor()
     cur5.execute(sqlPSC)
     sqlU = ''' CREATE TABLE IF NOT EXISTS "Users" 
-        ("u_PK" INTEGER NOT NULL UNIQUE, "discordID" TEXT NOT NULL UNIQUE, "discordUsername" TEXT NOT NULL, 
-        "discordServerNickname"	TEXT, "plexUsername" TEXT DEFAULT 'NEEDSUPDATED', "plexEmailAddress" TEXT, 
-        "serverName" TEXT, "dateRemoved" TEXT, "dateInvited" INTEGER, "dateQueued" TEXT, "status" INTEGER, 
-        PRIMARY KEY("u_PK" AUTOINCREMENT) ); '''
+        ("u_PK" INTEGER NOT NULL UNIQUE, "discordID" TEXT NOT NULL UNIQUE, "discordUsername" TEXT, 
+        "discordServerNickname"	TEXT, "plexUsername" TEXT DEFAULT 'NEEDSUPDATED', 
+        "plexEmailAddress" TEXT NOT NULL UNIQUE, "serverName" TEXT, "dateRemoved" TEXT, "dateInvited" TEXT, 
+        "dateQueued" TEXT, "status" INTEGER, PRIMARY KEY("u_PK" AUTOINCREMENT)); '''
     cur6 = conn.cursor()
     cur6.execute(sqlU)
     return
@@ -186,6 +186,17 @@ def getUserCountForPlexServerName(conn, serverName):
     return userCountForPlexServerName
 
 
+def getFirstPlexServerNameWithOpenSpots(conn):
+    firstPlexServerNameWithOpenSpots = ""
+    plexServers = getListOfPlexServers(conn)
+    for server in plexServers:
+        userCount = getUserCountForPlexServerName(conn, str(server[1]))
+        if userCount < 100:
+            firstPlexServerNameWithOpenSpots = str(server[1])
+            break
+    return firstPlexServerNameWithOpenSpots
+
+
 # region update Bot config methods
 def updateBotChannelID(conn, values):
     try:
@@ -224,6 +235,63 @@ def getTotalOpenSpots(conn):
         userCount = getUserCountForPlexServerName(conn, str(server[1]))
         totalOpenSpotsCount += (100 - userCount)
     return totalOpenSpotsCount
+
+
+def checkDiscordIDExists(conn, discordID):
+    discordIDExists = False
+    cur = conn.cursor()
+    cur.execute('select * from Users where discordID = (?)', (str(discordID),))
+    rows = cur.fetchall()
+    if len(rows) == 1:
+        discordIDExists = True
+    else:
+        discordIDExists = False
+    return discordIDExists
+
+
+def insertInvitedUser(conn, values):
+    sql = ''' INSERT INTO Users(discordID,discordUsername,discordServerNickname,plexUsername,plexEmailAddress,
+        serverName,dateInvited,status) VALUES(?,?,?,?,?,?,?,?) '''
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, values)
+    except Exception as e:
+        print('error from insertInvitedUser' + str(e))
+    return
+
+
+def inviteEmailToPlex(conn, email, values):
+    localSession = Session()
+    localSession.verify = False
+    if not localSession.verify:
+        # Disable the warning that the request is insecure, we know that...
+        from urllib3 import disable_warnings
+        from urllib3.exceptions import InsecureRequestWarning
+        disable_warnings(InsecureRequestWarning)
+    cur = conn.cursor()
+    cur.execute('select * from PlexServerConfiguration where serverName like(?)', (str(values[3]),))
+    rows = cur.fetchall()
+    rowTuple = rows[0]
+    plex = PlexServer(rowTuple[2], rowTuple[3], localSession)
+    sections_lst = [x.title for x in plex.library.sections()]
+    inviteSuccess = False
+    date1 = datetime.datetime.now()
+    try:
+        plex.myPlexAccount().inviteFriend(user=email, server=plex, sections=sections_lst, allowSync=None,
+                                          allowCameraUpload=None, allowChannels=None, filterMovies=None,
+                                          filterTelevision=None, filterMusic=None)
+        inviteSuccess = True
+    except Exception as e:
+        print('error from inviteEmailToPlex: ' + str(e))
+    if inviteSuccess:
+        try:
+            uValues = (str(values[0]), str(values[1]), str(values[2]), 'UNKNOWN', email, str(values[3]), str(date1), '2')
+            insertInvitedUser(conn, uValues)
+        except Exception as e:
+            print('error from within invite success: ' + str(e))
+    else:
+        print("invite success is not true for some reason")
+    return
 # endregion
 
 
@@ -329,6 +397,25 @@ else:
                         recordCommandHistory(DB_CONNECTION, values)
                     if message.author.dm_channel is not None:
                         await message.author.dm_channel.send('private pong')
+                if message.content.startswith(commandPrefix + 'inviteme'):
+                    if len(messageArray) == 2 and "@" in str(messageArray[1]):
+                        with DB_CONNECTION:
+                            values = ("inviteme", "fromPrivateDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            existsAlready = checkDiscordIDExists(DB_CONNECTION, str(message.author.id))
+                        if not existsAlready:
+                            if getTotalOpenSpots(DB_CONNECTION) > 0:
+                                serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                                userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
+                                              serverName)
+                                inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
+                                if message.author.dm_channel is not None:
+                                    await message.author.dm_channel.send('You have been invited to ' + serverName
+                                                                         + '. If you do not see an invite, make sure '
+                                                                           'to check spam')
+                    else:
+                        thing = "incorrect params. should look like **" + commandPrefix + "inviteme email@address.com**"
                 # region private message admin actions
                 if str(message.author.id) == adminDiscordID:
                     if message.content.startswith(commandPrefix + 'updatebotchannelid'):
