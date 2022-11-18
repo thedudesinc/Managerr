@@ -176,6 +176,16 @@ def getPlexServerConfigInfoForName(conn, serverName):
     return plexServerConfigInfo
 
 
+def getDBInfoForDiscordID(conn, discordID):
+    dbInfo = []
+    cur = conn.cursor()
+    cur.execute('select * from Users where discordID =(?)', (str(discordID),))
+    rows = cur.fetchall()
+    if len(rows) == 1:
+        dbInfo = rows[0]
+    return dbInfo
+
+
 def getUserCountForPlexServerName(conn, serverName):
     userCountForPlexServerName = 0
     localSession = Session()
@@ -273,6 +283,86 @@ def updateCommandPrefix(conn, values):
         print('error from updateCommandPrefix: ' + str(e))
     return
 # endregion
+
+
+def updateInactivityForServerName(conn, serverName, days):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET inactivityLimit =(?) WHERE serverName =(?)',
+                    (str(days), str(serverName),))
+    except Exception as e:
+        print('error from updateInactivityForServerName: ' + str(e))
+    return
+
+
+def updateInviteAcceptanceLimitForServerName(conn, serverName, days):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET inviteAcceptanceLimit =(?) WHERE serverName =(?)',
+                    (str(days), str(serverName),))
+    except Exception as e:
+        print('error from updateInviteAcceptanceLimitForServerName: ' + str(e))
+    return
+
+
+def updateTautulliURLForServerName(conn, serverName, url):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET tautulliURL =(?) WHERE serverName =(?)',
+                    (str(url), str(serverName),))
+    except Exception as e:
+        print('error from updateTautulliURLForServerName: ' + str(e))
+    return
+
+
+def updateTautulliAPIKeyForServerName(conn, serverName, apikey):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET tautulliAPIKey =(?) WHERE serverName =(?)',
+                    (str(apikey), str(serverName),))
+    except Exception as e:
+        print('error from updateTautulliAPIKeyForServerName: ' + str(e))
+    return
+
+
+def updateServerURLForServerName(conn, serverName, serverURL):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET serverURL =(?) WHERE serverName =(?)',
+                    (str(serverURL), str(serverName),))
+    except Exception as e:
+        print('error from updateServerURLForServerName: ' + str(e))
+    return
+
+
+def updateServerTokenForServerName(conn, serverName, serverToken):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET serverToken =(?) WHERE serverName =(?)',
+                    (str(serverToken), str(serverName),))
+    except Exception as e:
+        print('error from updateServerTokenForServerName: ' + str(e))
+    return
+
+
+def updateChecksInactivityForServerName(conn, serverName, checks):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE PlexServerConfiguration SET checksInactivity =(?) WHERE serverName =(?)',
+                    (str(checks), str(serverName),))
+    except Exception as e:
+        print('error from updateChecksInactivityForServerName: ' + str(e))
+    return
+
+
+def updateEmailForDiscordID(conn, discordID, newEmail):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE Users SET plexEmailAddress =(?) WHERE discordID =(?)',
+                    (str(newEmail), str(discordID),))
+    except Exception as e:
+        print('error from updateEmailForDiscordID: ' + str(e))
+    return
 
 
 def getBotChannelID(conn):
@@ -384,6 +474,28 @@ def inviteEmailToPlex(conn, email, values):
     else:
         print("invite success is not true for some reason")
     return
+
+
+def getDateQueuedForDiscordID(conn, discordID):
+    dateQueued = ""
+    cur = conn.cursor()
+    cur.execute('select dateQueued from Users where discordID = (?)', str(discordID))
+    rows = cur.fetchall()
+    if len(rows) == 1:
+        rowTuple = rows[0]
+        dateQueued = str(rowTuple[0])
+    return dateQueued
+
+
+def getCountQueuedAheadOfDate(conn, dateQueued):
+    countQueuedAhead = 0
+    cur = conn.cursor()
+    cur.execute('count() from Users where status = ''4'' and dateQueued < (?)', (str(dateQueued),))
+    rows = cur.fetchall()
+    if len(rows) == 1:
+        rowTuple = rows[0]
+        countQueuedAhead = rowTuple[0]
+    return countQueuedAhead
 # endregion
 
 
@@ -420,6 +532,9 @@ else:
             commandPrefix = getCommandPrefix(DB_CONNECTION)
         game = discord.Game(name="try " + commandPrefix + "help")
         await client.change_presence(activity=game)
+        # endregion
+        # region repeated actions by the bot
+
         # endregion
         print("The bot is ready!")
     # endregion
@@ -476,175 +591,16 @@ else:
             messageArray = message.content.split()
             # endregion
             if message.channel.type.name == "private" or message.channel.type.name == "group":
-                # print("got a private message")
                 # region create DM to author
                 if message.author.dm_channel is None:
                     await message.author.create_dm()
                 # endregion
-                # region Private Message Actions
-                if message.content == commandPrefix + 'ping':
-                    with DB_CONNECTION:
-                        values = ("private ping", "privateNoNickname", str(message.author.name),
-                                  str(message.author.id), str(date1), str(message.content))
-                        recordCommandHistory(DB_CONNECTION, values)
-                    if message.author.dm_channel is not None:
-                        await message.author.dm_channel.send('private pong')
-                if message.content.startswith(commandPrefix + 'inviteme'):
-                    if len(messageArray) == 2 and "@" in str(messageArray[1]):
-                        with DB_CONNECTION:
-                            values = ("inviteme", "fromPrivateDM", str(message.author.name),
-                                      str(message.author.id), str(date1), str(message.content))
-                            recordCommandHistory(DB_CONNECTION, values)
-                            existsAlready = checkDiscordIDExists(DB_CONNECTION, str(message.author.id))
-                            if existsAlready:
-                                statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
-                                emailForMember = getEmailForDiscordID(DB_CONNECTION, str(message.author.id))
-                        if not existsAlready:
-                            if getTotalOpenSpots(DB_CONNECTION) > 0:
-                                serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
-                                userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
-                                              serverName)
-                                inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You have been invited to ' + serverName
-                                                                         + '. If you do not see an invite, make sure '
-                                                                           'to check spam')
-                            else:
-                                with DB_CONNECTION:
-                                    qValues = (str(message.author.id), str(message.author.name), str(messageArray[1]),
-                                               str(date1), '4')
-                                    insertQueuedUser(DB_CONNECTION, qValues)
-                                await message.author.dm_channel.send('There are currently no open slots, but you have '
-                                                                     'been added to the queue. To see your place in the'
-                                                                     ' queue, try ' + commandPrefix + 'status')
-                        else:
-                            if statusForMember == '0' and getTotalOpenSpots(DB_CONNECTION) > 0:
-                                serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
-                                userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
-                                              serverName)
-                                inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You were removed for inactivity, however '
-                                                                         'there are open spots now, so you have been '
-                                                                         're-invited. \n You have been invited to '
-                                                                         + serverName
-                                                                         + '. If you do not see an invite make sure to '
-                                                                           'check spam/junk')
-                            elif statusForMember == '0' and getTotalOpenSpots(DB_CONNECTION) == 0:
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You were removed for inactivity and there '
-                                                                         'are currently no spots open. You have been '
-                                                                         'added to the queue for an invite')
-                            elif statusForMember == '1':
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You were manually removed by an admin. '
-                                                                         'Please message the admin with any questions')
-                            elif statusForMember == '2' and emailForMember == str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('An invite has already been sent for that '
-                                                                         'email address, but it has not been accepted '
-                                                                         'yet. Please accept the invite and do not '
-                                                                         'forget to check your spam if you cannot '
-                                                                         'find it.')
-                            elif statusForMember == '2' and emailForMember != str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('An invite has already been sent for you, '
-                                                                         'but for a different email address. \nIf you '
-                                                                         'made a typo when you first used the '
-                                                                         + commandPrefix
-                                                                         + 'inviteme command you can leave the discord '
-                                                                           'server to be removed from my memory. '
-                                                                           'Then you can DM me the '
-                                                                         + commandPrefix
-                                                                         + 'inviteme command again with the correct '
-                                                                           'info. This will place you at the bottom '
-                                                                           'of the invite queue.')
-                            elif statusForMember == '3' and emailForMember != str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You have already accepted an invite for a '
-                                                                         'different email address. If you are trying '
-                                                                         'to get an invite for someone else, please '
-                                                                         'have them join the discord server and DM me '
-                                                                         'the ' + commandPrefix + 'inviteme command')
-                            elif statusForMember == '3' and emailForMember == str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You have already accepted an invite for that '
-                                                                         'email address. If you are having an '
-                                                                         'problems please message the admin.')
-                            elif statusForMember == '4' and emailForMember == str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You have already been queued for an invite '
-                                                                         'to that email address. If you want to see '
-                                                                         'your place in the queue, try the '
-                                                                         + commandPrefix
-                                                                         + 'status email@address.com')
-                            elif statusForMember == '4' and emailForMember != str(messageArray[1]):
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('You have already been added to the queue, '
-                                                                         'but for a different email address. \nIf this '
-                                                                         'is because of a typo when you first used the '
-                                                                         'command, leave the discord and rejoin. \nThis'
-                                                                         ' will clear you from my memory and you can '
-                                                                         'DM me the inviteme command with the correct '
-                                                                         'address. \nThis will reset your position in '
-                                                                         'the queue. If you are trying to get an '
-                                                                         'invite for someone else, have them join '
-                                                                         'the discord server and DM me the inviteme '
-                                                                         'command. \nIf you are ok with possibly '
-                                                                         'waiting, you can message the admin that '
-                                                                         'you made a typo, and they can correct it '
-                                                                         'without losing your place in the queue.')
-                            else:
-                                if message.author.dm_channel is not None:
-                                    await message.author.dm_channel.send('Something went wrong, and I could not get '
-                                                                         'your status from memory.')
-                    else:
-                        if message.author.dm_channel is not None:
-                            await message.author.dm_channel.send('Incorrect command usage. It should look like this: '
-                                                                 '**' + commandPrefix + 'inviteme email@address.com**')
-                if message.content.startswith(commandPrefix + 'status'):
-                    with DB_CONNECTION:
-                        memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
-                        values = ("status", "fromPrivateDM", str(message.author.name),
-                                  str(message.author.id), str(date1), str(message.content))
-                        recordCommandHistory(DB_CONNECTION, values)
-                    if memberStatus != "":
-                        statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
-                        if statusForMember == '0':
-                            await message.reply('You have been removed for inactivity', mention_author=False)
-                        if statusForMember == '1':
-                            await message.reply('You have been manually removed by an admin', mention_author=False)
-                        if statusForMember == '2':
-                            await message.reply('You have been invited but you have not accepted yet',
-                                                mention_author=False)
-                        if statusForMember == '3':
-                            await message.reply('You have already accepted an invite.', mention_author=False)
-                        if statusForMember == '4':
-                            await message.reply('You have been queued for an invite.', mention_author=False)
-                    else:
-                        thing = 'you dont have a status.'
-                if message.content.startswith(commandPrefix + 'help'):
-                    with DB_CONNECTION:
-                        values = ("help", "fromPrivateDM", str(message.author.name),
-                                  str(message.author.id), str(date1), str(message.content))
-                        recordCommandHistory(DB_CONNECTION, values)
-                    if message.author.dm_channel is not None:
-                        await message.author.dm_channel.send('Hello! I am the Plex Manager Bot for this discord. '
-                                                             'For a list of my commands try **'
-                                                             + commandPrefix
-                                                             + 'listcommands**. Note that the available commands are '
-                                                               'context dependent, so whether you are messaging me '
-                                                               'directly, or in one of the public channels, '
-                                                               'you can always **'
-                                                             + commandPrefix
-                                                             + 'listcommands** to see what I can do for you.')
-
                 # region private message admin actions
                 if str(message.author.id) == adminDiscordID:
                     if message.content.startswith(commandPrefix + 'updatebotchannelid'):
                         if len(messageArray) == 2:
                             with DB_CONNECTION:
-                                values = ("updatebotchannelid", "privateNoNickname", str(message.author.name),
+                                values = ("updatebotchannelid", "fromAdminDM", str(message.author.name),
                                           str(message.author.id), str(date1), str(message.content))
                                 recordCommandHistory(DB_CONNECTION, values)
                                 uValues = (str(messageArray[1]), adminDiscordID)
@@ -658,7 +614,7 @@ else:
                     if message.content.startswith(commandPrefix + 'updatecommandprefix'):
                         if len(messageArray) == 2:
                             with DB_CONNECTION:
-                                values = ("updatecommandprefix", "privateNoNickname", str(message.author.name),
+                                values = ("updatecommandprefix", "fromAdminDM", str(message.author.name),
                                           str(message.author.id), str(date1), str(message.content))
                                 recordCommandHistory(DB_CONNECTION, values)
                                 uValues = (str(messageArray[1]), adminDiscordID)
@@ -674,7 +630,7 @@ else:
                     if message.content.startswith(commandPrefix + 'initplexserver'):
                         if len(messageArray) == 10:
                             with DB_CONNECTION:
-                                values = ("initplexserver", "privateNoNickname", str(message.author.name),
+                                values = ("initplexserver", "fromAdminDM", str(message.author.name),
                                           str(message.author.id), str(date1), str(message.content))
                                 recordCommandHistory(DB_CONNECTION, values)
                                 iValues = (str(messageArray[1]), str(messageArray[2]), str(messageArray[3]),
@@ -686,13 +642,14 @@ else:
                                                                      + str(getNewestPlexServer(DB_CONNECTION)) + '**')
                         else:
                             if message.author.dm_channel is not None:
-                                await message.author.dm_channel.send('not enough parameters. Should have: serverName '
-                                                                     'serverURL serverToken checksInactivity '
-                                                                     'invitedDiscordRole tautulliURL tautulliAPIKey '
-                                                                     'inactivityLimit inviteAcceptanceLimit')
+                                await message.author.dm_channel.send(
+                                    'not enough parameters. Should have: serverName '
+                                    'serverURL serverToken checksInactivity '
+                                    'invitedDiscordRole tautulliURL tautulliAPIKey '
+                                    'inactivityLimit inviteAcceptanceLimit')
                     if message.content.startswith(commandPrefix + 'listplexservers'):
                         with DB_CONNECTION:
-                            values = ("listplexservers", "privateNoNickname", str(message.author.name),
+                            values = ("listplexservers", "fromAdminDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                             plexServers = getListOfPlexServers(DB_CONNECTION)
@@ -709,10 +666,10 @@ else:
                                                                      + '\n**InactivityLimit:** ' + str(server[8])
                                                                      + '\n**InviteAcceptanceLimit:** ' + str(server[9])
                                                                      + '\n**UserCount:** ' + str(userCount)
-                                                                     + '\n')
+                                                                     + '\n--------------------------------------------')
                     if message.content.startswith(commandPrefix + 'clearpendinginvites'):
                         with DB_CONNECTION:
-                            values = ("clearpendinginvites", "privateNoNickname", str(message.author.name),
+                            values = ("clearpendinginvites", "fromAdminDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         if len(messageArray) == 2:
@@ -728,7 +685,7 @@ else:
                             await message.author.dm_channel.send('missing number of days param, or too many params')
                     if message.content.startswith(commandPrefix + 'listallpendinginvites'):
                         with DB_CONNECTION:
-                            values = ("listallpendinginvites", "privateNoNickname", str(message.author.name),
+                            values = ("listallpendinginvites", "fromAdminDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         if message.author.dm_channel is not None:
@@ -744,34 +701,485 @@ else:
                                                                          + '\n**friendlyName:** ' + invite.friendlyName)
                             except Exception as e:
                                 await message.author.dm_channel.send('exception occurred ' + str(e))
-                    if message.content.startswith(commandPrefix + 'listcommands'):
+                    if message.content.startswith(commandPrefix + 'help'):
                         with DB_CONNECTION:
-                            values = ("listalladmincommands", "privateNoNickname", str(message.author.name),
+                            values = ("help", "fromAdminDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         if message.author.dm_channel is not None:
-                            await message.author.dm_channel.send('updatebotchannelid \nupdatecommandprefix '
-                                                                 '\ninitplexserver \nlistplexservers '
-                                                                 '\nclearpendinginvites \nlistallpendinginvites '
-                                                                 '\nlistalladmincommands \nhelp')
+                            await message.author.dm_channel.send(
+                                'Hello! I am the Plex Manager Bot for this discord. '
+                                'I recognize you as the admin of this server. For a '
+                                'list of my commands try **'
+                                + commandPrefix
+                                + 'listcommands**. Note that the available commands '
+                                  'are context dependent, so whether you are '
+                                  'messaging me directly, or in one of the public '
+                                  'channels, you can always **'
+                                + commandPrefix
+                                + 'listcommands** to see what I can do for you.'
+                            )
+                    if message.content.startswith(commandPrefix + 'dbinfodiscordid'):
+                        with DB_CONNECTION:
+                            values = ("dbinfodiscordid", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 2:
+                            dbInfo = getDBInfoForDiscordID(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('**discordID:**  ' + str(dbInfo[1])
+                                                                     + '\n**discordUsername:**  ' + str(dbInfo[2])
+                                                                     + '\n**discordServerNickname:**  '
+                                                                     + str(dbInfo[3])
+                                                                     + '\n**plexUsername:**  ' + str(dbInfo[4])
+                                                                     + '\n**plexEmailAddress:**  ' + str(dbInfo[5])
+                                                                     + '\n**serverName:**  ' + str(dbInfo[6])
+                                                                     + '\n**dateRemoved:**  ' + str(dbInfo[7])
+                                                                     + '\n**dateInvited:**  ' + str(dbInfo[8])
+                                                                     + '\n**dateQueued:**  ' + str(dbInfo[9])
+                                                                     + '\n**status:**  ' + str(dbInfo[10]))
+                    if message.content.startswith(commandPrefix + 'updateinactivitydays'):
+                        with DB_CONNECTION:
+                            values = ("updateinactivitydays", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateInactivityForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                              str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Inactivity updated to ' + str(serverConfig[8])
+                                                                     + ' days for server: ' + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updateinactivitydays serverName days**')
+                    if message.content.startswith(commandPrefix + 'updateinviteacceptancelimit'):
+                        with DB_CONNECTION:
+                            values = ("updateinviteacceptancelimit", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateInviteAcceptanceLimitForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                                         str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Invite acceptance limit updated to '
+                                                                     + str(serverConfig[9])
+                                                                     + ' days for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updateinviteacceptancelimit serverName days**')
+                    if message.content.startswith(commandPrefix + 'updatetautulliurl'):
+                        with DB_CONNECTION:
+                            values = ("updatetautulliurl", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateTautulliURLForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                               str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Tautulli URL updated to '
+                                                                     + str(serverConfig[6])
+                                                                     + ' for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updatetautulliurl serverName url**')
+                    if message.content.startswith(commandPrefix + 'updatetautulliapikey'):
+                        with DB_CONNECTION:
+                            values = ("updatetautulliapikey", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateTautulliAPIKeyForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                                  str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Tautulli API Key updated to '
+                                                                     + str(serverConfig[7])
+                                                                     + ' for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updatetautulliapikey serverName apikey**')
+                    if message.content.startswith(commandPrefix + 'updateserverurl'):
+                        with DB_CONNECTION:
+                            values = ("updateserverurl", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateServerURLForServerName(DB_CONNECTION, str(messageArray[1]), str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('URL updated to '
+                                                                     + str(serverConfig[2])
+                                                                     + ' for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updateserverurl serverName serverurl**')
+                    if message.content.startswith(commandPrefix + 'updateservertoken'):
+                        with DB_CONNECTION:
+                            values = ("updateservertoken", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateServerTokenForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                               str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Token updated to '
+                                                                     + str(serverConfig[3])
+                                                                     + ' for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updateservertoken serverName servertoken**')
+                    if message.content.startswith(commandPrefix + 'updatechecksinactivity'):
+                        with DB_CONNECTION:
+                            values = ("updatechecksinactivity", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateChecksInactivityForServerName(DB_CONNECTION, str(messageArray[1]),
+                                                                    str(messageArray[2]))
+                                serverConfig = getPlexServerConfigInfoForName(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Activity check updated to '
+                                                                     + str(serverConfig[4])
+                                                                     + ' for server: '
+                                                                     + str(serverConfig[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updatechecksinactivity serverName YES/NO**')
+                    if message.content.startswith(commandPrefix + 'updateemailforuser'):
+                        with DB_CONNECTION:
+                            values = ("updateemailforuser", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 3:
+                            with DB_CONNECTION:
+                                updateEmailForDiscordID(DB_CONNECTION, str(messageArray[1]), str(messageArray[2]))
+                                userInfo = getDBInfoForDiscordID(DB_CONNECTION, str(messageArray[1]))
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Email updated to ' + str(userInfo[4])
+                                                                     + ' for user: ' + str(userInfo[1]))
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'updateemailforuser discordid email**')
+                    if message.content.startswith(commandPrefix + 'openspots'):
+                        with DB_CONNECTION:
+                            values = ("openspots", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            openspotsCount = getTotalOpenSpots(DB_CONNECTION)
+                        await message.reply('There are **' + str(openspotsCount) + '** spots open.',
+                                            mention_author=False)
+                    if message.content.startswith(commandPrefix + 'listcommands'):
+                        with DB_CONNECTION:
+                            values = ("listcommands", "privateNoNickname", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if message.author.dm_channel is not None:
+                            await message.author.dm_channel.send('updatebotchannelid **channelid**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdatecommandprefix **newprefix**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\ninitplexserver **serverName serverURL serverToken '
+                                                                 'checksInactivity invitedDiscordRole tautulliURL '
+                                                                 'tautulliAPIKey inactivityLimi inviteacceptanceLimit**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nlistplexservers '
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nclearpendinginvites **days**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nlistallpendinginvites '
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nhelp '
+                                                                 '\n---------------------------------------------------'
+                                                                 '\ndbinfodiscordid **discordid**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdateinactivitydays **serverName days**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdateinviteacceptancelimit **serverName days**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdatetautulliurl **serverName tautulliurl**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdatetautulliapikey **serverName apikey**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdateserverurl **serverName serverURL**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdateservertoken **serverName serverToken**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdatechecksinactivity **serverName YES/NO**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nupdateemailforuser **discordid email**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nopenspots'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nlistcommands'
+                                                                 '\n---------------------------------------------------'
+                                                                 )
+                    # update serverName?
+                # endregion
+                else:
+                    # region direct messages USER actions
+                    if message.content == commandPrefix + 'ping':
+                        with DB_CONNECTION:
+                            values = ("private ping", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if message.author.dm_channel is not None:
+                            await message.author.dm_channel.send('private pong')
+                    if message.content.startswith(commandPrefix + 'inviteme'):
+                        if len(messageArray) == 2 and "@" in str(messageArray[1]):
+                            with DB_CONNECTION:
+                                values = ("inviteme", "fromUserDM", str(message.author.name),
+                                          str(message.author.id), str(date1), str(message.content))
+                                recordCommandHistory(DB_CONNECTION, values)
+                                existsAlready = checkDiscordIDExists(DB_CONNECTION, str(message.author.id))
+                                if existsAlready:
+                                    statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
+                                    emailForMember = getEmailForDiscordID(DB_CONNECTION, str(message.author.id))
+                            if not existsAlready:
+                                if getTotalOpenSpots(DB_CONNECTION) > 0:
+                                    serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                                    userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
+                                                  serverName)
+                                    inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You have been invited to ' + serverName
+                                                                             + '. If you do not see an invite, make sure '
+                                                                               'to check spam')
+                                else:
+                                    with DB_CONNECTION:
+                                        qValues = (str(message.author.id), str(message.author.name), str(messageArray[1]),
+                                                   str(date1), '4')
+                                        insertQueuedUser(DB_CONNECTION, qValues)
+                                    await message.author.dm_channel.send('There are currently no open slots, but you have '
+                                                                         'been added to the queue. To see your place in the'
+                                                                         ' queue, try ' + commandPrefix + 'status')
+                            else:
+                                if statusForMember == '0' and getTotalOpenSpots(DB_CONNECTION) > 0:
+                                    serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                                    userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
+                                                  serverName)
+                                    inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You were removed for inactivity, however '
+                                                                             'there are open spots now, so you have been '
+                                                                             're-invited. \n You have been invited to '
+                                                                             + serverName
+                                                                             + '. If you do not see an invite make sure to '
+                                                                               'check spam/junk')
+                                elif statusForMember == '0' and getTotalOpenSpots(DB_CONNECTION) == 0:
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You were removed for inactivity and there '
+                                                                             'are currently no spots open. You have been '
+                                                                             'added to the queue for an invite')
+                                elif statusForMember == '1':
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You were manually removed by an admin. '
+                                                                             'Please message the admin with any questions')
+                                elif statusForMember == '2' and emailForMember == str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('An invite has already been sent for that '
+                                                                             'email address, but it has not been accepted '
+                                                                             'yet. Please accept the invite and do not '
+                                                                             'forget to check your spam if you cannot '
+                                                                             'find it.')
+                                elif statusForMember == '2' and emailForMember != str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('An invite has already been sent for you, '
+                                                                             'but for a different email address. \nIf you '
+                                                                             'made a typo when you first used the '
+                                                                             + commandPrefix
+                                                                             + 'inviteme command you can leave the discord '
+                                                                               'server to be removed from my memory. '
+                                                                               'Then you can DM me the '
+                                                                             + commandPrefix
+                                                                             + 'inviteme command again with the correct '
+                                                                               'info. This will place you at the bottom '
+                                                                               'of the invite queue.')
+                                elif statusForMember == '3' and emailForMember != str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You have already accepted an invite for a '
+                                                                             'different email address. If you are trying '
+                                                                             'to get an invite for someone else, please '
+                                                                             'have them join the discord server and DM me '
+                                                                             'the ' + commandPrefix + 'inviteme command')
+                                elif statusForMember == '3' and emailForMember == str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You have already accepted an invite for that '
+                                                                             'email address. If you are having an '
+                                                                             'problems please message the admin.')
+                                elif statusForMember == '4' and emailForMember == str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You have already been queued for an invite '
+                                                                             'to that email address. If you want to see '
+                                                                             'your place in the queue, try the '
+                                                                             + commandPrefix
+                                                                             + 'status email@address.com')
+                                elif statusForMember == '4' and emailForMember != str(messageArray[1]):
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('You have already been added to the queue, '
+                                                                             'but for a different email address. \nIf this '
+                                                                             'is because of a typo when you first used the '
+                                                                             'command, leave the discord and rejoin. \nThis'
+                                                                             ' will clear you from my memory and you can '
+                                                                             'DM me the inviteme command with the correct '
+                                                                             'address. \nThis will reset your position in '
+                                                                             'the queue. If you are trying to get an '
+                                                                             'invite for someone else, have them join '
+                                                                             'the discord server and DM me the inviteme '
+                                                                             'command. \nIf you are ok with possibly '
+                                                                             'waiting, you can message the admin that '
+                                                                             'you made a typo, and they can correct it '
+                                                                             'without losing your place in the queue.')
+                                else:
+                                    if message.author.dm_channel is not None:
+                                        await message.author.dm_channel.send('Something went wrong, and I could not get '
+                                                                             'your status from memory.')
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Incorrect command usage. It should look like this: '
+                                                                     '**' + commandPrefix + 'inviteme email@address.com**')
+                    if message.content.startswith(commandPrefix + 'status'):
+                        with DB_CONNECTION:
+                            memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
+                            values = ("status", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if memberStatus != "":
+                            statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
+                            if statusForMember == '0':
+                                await message.reply('You have been removed for inactivity', mention_author=False)
+                            if statusForMember == '1':
+                                await message.reply('You have been manually removed by an admin', mention_author=False)
+                            if statusForMember == '2':
+                                await message.reply('You have been invited but you have not accepted yet',
+                                                    mention_author=False)
+                            if statusForMember == '3':
+                                await message.reply('You have already accepted an invite.', mention_author=False)
+                            if statusForMember == '4':
+                                await message.reply('You have been queued for an invite.', mention_author=False)
+                        else:
+                            thing = 'you dont have a status.'
                     if message.content.startswith(commandPrefix + 'help'):
                         with DB_CONNECTION:
-                            values = ("help", "fromPrivateDM", str(message.author.name),
+                            values = ("help", "fromUserDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         if message.author.dm_channel is not None:
                             await message.author.dm_channel.send('Hello! I am the Plex Manager Bot for this discord. '
-                                                                 'I recognize you as the admin of this server. For a '
-                                                                 'list of my commands try **'
+                                                                 'For a list of my commands try **'
                                                                  + commandPrefix
-                                                                 + 'listcommands**. Note that the available commands '
-                                                                   'are context dependent, so whether you are '
-                                                                   'messaging me directly, or in one of the public '
-                                                                   'channels, you can always **'
+                                                                 + 'listcommands**. Note that the available commands are '
+                                                                   'context dependent, so whether you are messaging me '
+                                                                   'directly, or in one of the public channels, '
+                                                                   'you can always **'
                                                                  + commandPrefix
                                                                  + 'listcommands** to see what I can do for you.')
-                # endregion
-                # endregion
+                    if message.content.startswith(commandPrefix + 'queuestatus'):
+                        with DB_CONNECTION:
+                            values = ("queuestatus", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            statusForMember = getStatusForDiscordID(str(message.author.id))
+                        if statusForMember == '4':
+                            with DB_CONNECTION:
+                                dateQueued = getDateQueuedForDiscordID(DB_CONNECTION, str(message.author.id))
+                                countAhead = getCountQueuedAheadOfDate(DB_CONNECTION, dateQueued)
+                            if countAhead == 0:
+                                if message.author.dm_channel is not None:
+                                    await message.author.dm_channel.send('There is no one queued ahead of you, you should '
+                                                                         'recieve the next availabel invite.')
+                            else:
+                                if message.author.dm_channel is not None:
+                                    await message.author.dm_channel.send('There are **'
+                                                                         + str(countAhead)
+                                                                         + '**  users queued ahead of you.')
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('You are not currently queued for an invite. '
+                                                                     'Try the ' + commandPrefix + 'inviteme command')
+                    if message.content.startswith(commandPrefix + 'openspots'):
+                        with DB_CONNECTION:
+                            values = ("openspots", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            openspotsCount = getTotalOpenSpots(DB_CONNECTION)
+                        if message.author.dm_channel is not None:
+                            await message.author.dm_channel.send('There are **'
+                                                                 + str(openspotsCount)
+                                                                 + '**  spots open.')
+                    if message.content.startswith(commandPrefix + 'yourmemoryofme'):
+                        with DB_CONNECTION:
+                            values = ("yourmemoryofme", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            userInfo = getDBInfoForDiscordID(DB_CONNECTION, str(message.author.id))
+                        if message.author.dm_channel is not None and userInfo != []:
+                            await message.author.dm_channel.send('**discordID:**  ' + str(userInfo[1])
+                                                                 + '\n**discordUsername:**  ' + str(userInfo[2])
+                                                                 + '\n**discordServerNickname:**  ' + str(userInfo[3])
+                                                                 + '\n**plexUsername:**  ' + str(userInfo[4])
+                                                                 + '\n**plexEmailAddress:**  ' + str(userInfo[5])
+                                                                 + '\n**serverName:**  ' + str(userInfo[6])
+                                                                 + '\n**dateRemoved:**  ' + str(userInfo[7])
+                                                                 + '\n**dateInvited:**  ' + str(userInfo[8])
+                                                                 + '\n**dateQueued:**  ' + str(userInfo[9])
+                                                                 + '\n**status:**  ' + str(userInfo[10]))
+                        else:
+                            await message.author.dm_channel.send('I do not remember you.')
+                    if message.content.startswith(commandPrefix + 'listcommands'):
+                        with DB_CONNECTION:
+                            values = ("listcommands", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if message.author.dm_channel is not None:
+                            await message.author.dm_channel.send('Command prefix is: ' + commandPrefix +
+                                                                 '\ninviteme **email@address.com**'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nstatus'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nhelp'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nopenspots'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nqueuestatus'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nyourmemoryofme'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\nlistcommands'
+                                                                 '\n---------------------------------------------------'
+                                                                 )
+                    # endregion
             else:
                 # if messages come from public bot channel
                 if str(message.channel.id) == str(botChannelID):
@@ -779,9 +1187,17 @@ else:
                     if message.content == commandPrefix + 'ping':
                         await message.channel.send('bot channel pong!')
                         with DB_CONNECTION:
-                            values = ("bot channel ping", str(message.author.nick), str(message.author.name),
+                            values = ("bot channel ping", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
+                    if message.content.startswith(commandPrefix + 'openspots'):
+                        with DB_CONNECTION:
+                            values = ("openspots", "fromBotChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            openspotsCount = getTotalOpenSpots(DB_CONNECTION)
+                        await message.reply('There are **' + str(openspotsCount) + '** spots open.',
+                                            mention_author=False)
                     if message.content.startswith(commandPrefix + 'inviteme') and "@" in str(messageArray[1]):
                         if message.author.dm_channel is None:
                             try:
@@ -802,6 +1218,9 @@ else:
                     if message.content.startswith(commandPrefix + 'status'):
                         with DB_CONNECTION:
                             memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
+                            values = ("status", "fromBotChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
                         if memberStatus != "":
                             statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
                             if statusForMember == '0':
@@ -830,18 +1249,37 @@ else:
                                                      'of the public channels, you can always **'
                                                    + commandPrefix
                                                    + 'listcommands** to see what I can do for you.')
+                    if message.content.startswith(commandPrefix + 'listcommands'):
+                        with DB_CONNECTION:
+                            values = ("listcommands", "fromBotChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        await message.reply('Command prefix is ' + commandPrefix +
+                                            '\nping '
+                                            '\n------------------------------------------------------------------------'
+                                            '\ninviteme **email@address.com** '
+                                            '\n------------------------------------------------------------------------'
+                                            '\nopenspots '
+                                            '\n------------------------------------------------------------------------'
+                                            '\nstatus '
+                                            '\n------------------------------------------------------------------------'
+                                            '\nhelp '
+                                            '\n------------------------------------------------------------------------'
+                                            '\nlistcommands'
+                                            '\n------------------------------------------------------------------------'
+                                            )
                     # endregion
                 else:
                     # region public anywhere actions
                     if message.content == commandPrefix + 'ping':
                         await message.channel.send('public pong!')
                         with DB_CONNECTION:
-                            values = ("public ping", str(message.author.nick), str(message.author.name),
+                            values = ("public ping", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                     if message.content.startswith(commandPrefix + 'openspots'):
                         with DB_CONNECTION:
-                            values = ("openspots", str(message.author.nick), str(message.author.name),
+                            values = ("openspots", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                             openspotsCount = getTotalOpenSpots(DB_CONNECTION)
@@ -867,6 +1305,9 @@ else:
                     if message.content.startswith(commandPrefix + 'status'):
                         with DB_CONNECTION:
                             memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
+                            values = ("status", "fromPublicChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
                         if memberStatus != "":
                             statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
                             if statusForMember == '0':
@@ -881,10 +1322,10 @@ else:
                             if statusForMember == '4':
                                 await message.reply('You have been queued for an invite.', mention_author=False)
                         else:
-                            thing = 'you dont have a status.'
+                            await message.reply('You do not have a status.', mention_author=False)
                     if message.content.startswith(commandPrefix + 'help'):
                         with DB_CONNECTION:
-                            values = ("help", "fromAnyChannel", str(message.author.name),
+                            values = ("help", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         await message.channel.send('Hello! I am the Plex Manager Bot for this discord. For a list of '
@@ -895,6 +1336,29 @@ else:
                                                      'of the public channels, you can always **'
                                                    + commandPrefix
                                                    + 'listcommands** to see what I can do for you.')
+                    if message.content.startswith(commandPrefix + 'listcommands'):
+                        with DB_CONNECTION:
+                            values = ("listcommands", "fromPublicChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        await message.channel.send('Command prefix is: ' + commandPrefix +
+                                                   '\ninviteme **email@address.com**'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nopenspots'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nstatus'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nhelp'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nopenspots'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nqueuestatus'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nyourmemoryofme'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nlistcommands'
+                                                   '\n-----------------------------------------------------------------'
+                                                   )
                     # endregion
 
     # endregion
