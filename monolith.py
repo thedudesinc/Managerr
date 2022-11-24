@@ -32,6 +32,7 @@ GUILD_ID = 1004464978696343593
 # connects to the database
 
 
+# region defined methods
 def create_connection(db):
     conn = None
     try:
@@ -657,6 +658,8 @@ def time_format(total_seconds):
              ("{} minute{}, ".format(minutes, "s" if minutes != 1 else "") if minutes else "") + \
              ("{} second{}, ".format(seconds, "s" if seconds != 1 else "") if seconds else "")
     return result.strip().rstrip(',')
+
+# endregion
 
 
 # -----conn variable created here, so I didnt have to move the db def above the other variables
