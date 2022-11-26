@@ -2245,37 +2245,41 @@ else:
     async def on_member_remove(member):
         with DB_CONNECTION:
             statusForMember = getStatusForDiscordID(DB_CONNECTION, str(member.id))
-            print('this is the status i found for the person that just left: ' + str(statusForMember))
+            recordBotActionHistory(DB_CONNECTION, 'this is the status i found for the person that just left: '
+                                   + str(statusForMember), 'AUTOMATIC')
         if statusForMember == '0':
-            #removed for inactivity, delete them
+            # removed for inactivity, delete them
             with DB_CONNECTION:
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
-                recordBotActionHistory(DB_CONNECTION, 'deleted user from database discordID: '
-                                       + str(member.id), 'AUTOMATIC')
+                recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 0: deleted user from database '
+                                                      'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '1':
             #removed by admin, delete them
             with DB_CONNECTION:
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
-                recordBotActionHistory(DB_CONNECTION, 'deleted user from database discordID: '
-                                       + str(member.id), 'AUTOMATIC')
+                recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 1: deleted user from database '
+                                                      'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '2':
             #invited but not accepted
             with DB_CONNECTION:
                 cancelPendingInviteForDiscordID(DB_CONNECTION, str(member.id))
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
-                recordBotActionHistory(DB_CONNECTION, 'Canceled Pending invite and deleted from database '
-                                                      'for discordID: ' + str(member.id), 'AUTOMATIC')
+                recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 2: Canceled Pending invite and '
+                                                      'deleted from database for discordID: '
+                                       + str(member.id), 'AUTOMATIC')
         elif statusForMember == '3':
             #invited and accepted
             with DB_CONNECTION:
                 deleteFromPlexTautulliAndDB(DB_CONNECTION, str(member.id))
-                recordBotActionHistory(DB_CONNECTION, 'Removed Friend from Plex, Tautulli, and database by '
+                recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 3: Removed Friend from Plex, '
+                                                      'Tautulli, and database by '
                                                       'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '4':
             #queued for an invite
             with DB_CONNECTION:
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
-                recordBotActionHistory(DB_CONNECTION, 'Removed queued user from database by '
+                recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 4: Removed queued user from '
+                                                      'database by '
                                                       'discordID: ' + str(member.id), 'AUTOMATIC')
         else:
             with DB_CONNECTION:
