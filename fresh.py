@@ -963,11 +963,11 @@ def deleteFromPlexTautulliAndDB(conn, discordID):
 try:
     DB_CONNECTION = sqlite3.connect(database)
 except Error as e:
-    print(e)
+    print('error from creating DB_CONNECTION' + str(e))
 try:
     createDBTables(DB_CONNECTION)
 except Error as e:
-    print(e)
+    print('error from calling createDBTables' + str(e))
 # endregion
 
 with DB_CONNECTION:
@@ -1023,6 +1023,9 @@ else:
                     gotServerUsersSuccess = True
                 except Exception as e:
                     gotServerUsersSuccess = False
+                    with DB_CONNECTION:
+                        recordBotActionHistory(DB_CONNECTION, 'error from trying to get plex users for plex server: '
+                                               + str(plex[1]) + ' error: ' + str(e), 'AUTOMATIC')
                     print('error from trying to get plex users for plex server: ' + str(plex[1]) + ' error: ' + str(e))
 
                 if gotServerUsersSuccess:
@@ -1041,6 +1044,10 @@ else:
                         elif userStatus == 5:
                             print("found email in plex, that does not line up with email in database. "
                                   "this should not be possible Message admin")
+                            with DB_CONNECTION:
+                                recordBotActionHistory(DB_CONNECTION, 'found email in plex, that does not line up with'
+                                                                      ' email in database. This should not be '
+                                                                      'possible.' + xEmail, 'AUTOMATIC')
                     # endregion
                     # region update Username in database if UNKNOWN
                     if len(databaseUsersNoUsername) > 0:
@@ -1090,6 +1097,10 @@ else:
                                                             emailForOldestQueued, GUILD_ID)
                                     # dm user that they have been invited.
                             except Exception as e:
+                                with DB_CONNECTION:
+                                    recordBotActionHistory(DB_CONNECTION, 'something went wrong inviting user: '
+                                                           + discordIDForOldestQueued + ' email: '
+                                                           + emailForOldestQueued + ' error: ' + str(e), 'AUTOMATIC')
                                 print('something went wrong inviting user: '
                                       + discordIDForOldestQueued + ' email: '
                                       + emailForOldestQueued + ' error: ' + str(e))
@@ -1101,33 +1112,50 @@ else:
                     # print('there is nothing to do. db entry for member matches member in guild')
                     thing = ''
                 else:
-                    print('record for discordID: '
-                          + user[1] + ' in database but they are not a member of the guild. Delete from everywhere')
+                    with DB_CONNECTION:
+                        recordBotActionHistory(DB_CONNECTION, 'record for discordID: '
+                                               + user[1] + ' in database but they are not a member of the guild. '
+                                                           'Delete from everywhere', 'AUTOMATIC')
                     if user[10] == '0':
                         # if removed for inactivity
                         with DB_CONNECTION:
+                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+                                                   + user[10] + ' in database is in list of guild members. '
+                                                                'Status 0', 'AUTOMATIC')
                             deleteFromDBForDiscordID(DB_CONNECTION, user[1])
                     elif user[10] == '1':
                         # if manualy removed
                         with DB_CONNECTION:
+                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+                                                   + user[10] + ' in database is in list of guild members. '
+                                                                'Status 1', 'AUTOMATIC')
                             deleteFromDBForDiscordID(DB_CONNECTION, user[1])
                     elif user[10] == '2':
                         # invited but not accepted yet
                         with DB_CONNECTION:
                             cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
                             deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+                                                   + user[10] + ' in database is in list of guild members. '
+                                                                'Status 2', 'AUTOMATIC')
                             recordBotActionHistory(DB_CONNECTION, 'Canceled Pending invite and deleted from database '
                                                                   'for discordID: ' + user[1], 'AUTOMATIC')
                     elif user[10] == '3':
                         # invited and accepted
                         with DB_CONNECTION:
                             deleteFromPlexTautulliAndDB(DB_CONNECTION, user[1])
+                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+                                                   + user[10] + ' in database is in list of guild members. '
+                                                                'Status 3', 'AUTOMATIC')
                             recordBotActionHistory(DB_CONNECTION, 'Removed Friend from Plex, Tautulli, and database by '
                                                                   'discordID: ' + user[1], 'AUTOMATIC')
                     elif user[10] == '4':
                         # queued for an invite
                         with DB_CONNECTION:
                             deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+                                                   + user[10] + ' in database is in list of guild members. '
+                                                                'Status 4', 'AUTOMATIC')
                             recordBotActionHistory(DB_CONNECTION, 'Removed queued user from database by '
                                                                   'discordID: ' + user[1], 'AUTOMATIC')
 
