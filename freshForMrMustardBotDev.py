@@ -10,12 +10,12 @@ from plexapi.server import PlexServer
 intents = discord.Intents.all()
 intents.members = True
 client = discord.Client(intents=intents)
-GUILD_ID = 1045433182822072390
+GUILD_ID = 1004464978696343593
 MY_GUILD = client.get_guild(GUILD_ID)
 database = r"BotDB.db"
 DB_CONNECTION = None
 botConfigured = None
-CLIENT_TOKEN = "MTA0NTQzNTMyMjkxMTE3ODgzMg.G8sx3m.WJRT222gc2DKbra_9jZE3UtZbkq_njnx9tAThE"
+CLIENT_TOKEN = "Njk0MjUzODE0NjIyMTkxNjI2.GubGUG.CV7fplMHbquq27Wfn6gwyYzDAruRvqUoTMrhlU"
 # endregion
 
 
@@ -990,7 +990,7 @@ else:
         # region on_ready variables
         with DB_CONNECTION:
             commandPrefix = getCommandPrefix(DB_CONNECTION)
-        game = discord.Game(name="DM me with " + commandPrefix + "help")
+        game = discord.Game(name="try " + commandPrefix + "help")
         thisGuild = client.get_guild(GUILD_ID)
         await client.change_presence(activity=game)
         # endregion
@@ -1098,8 +1098,7 @@ else:
             for user in discordUsersList:
                 member = discord.utils.get(thisGuild.members, id=int(user[1]))
                 if member is not None:
-                    # print('there is nothing to do. db entry for member matches member in guild')
-                    thing = ''
+                    print('there is nothing to do. db entry for member matches member in guild')
                 else:
                     print('record for discordID: '
                           + user[1] + ' in database but they are not a member of the guild. Delete from everywhere')
@@ -1133,7 +1132,7 @@ else:
 
         @loop(hours=48)
         async def infrequent():
-            print("Infrequent Task Run task run " + str(datetime.datetime.now()))
+            print("48h task run " + str(datetime.datetime.now()))
             # region Check for Inactive Users and Remove
             with DB_CONNECTION:
                 checksList = getListOfPlexThatChecks(DB_CONNECTION)
@@ -1151,7 +1150,7 @@ else:
                 UNSHARE_LIMIT = 30  # Days
                 SERVER = PlexServer(baseurl=str(plex[2]), token=str(plex[3]), session=localSession)
                 ACCOUNT = SERVER.myPlexAccount()
-                DRY_RUN = False  # set to True to see console output of what users would be removed for inactivity.
+                DRY_RUN = True  # set to True to see console output of what users would be removed for inactivity.
                 IGNORE_NEVER_SEEN = False
                 # USERNAME_IGNORE = ['bbock727', 'iainm27']
                 # USERNAME_IGNORE = [username.lower() for username in USERNAME_IGNORE]
@@ -1289,14 +1288,14 @@ else:
                     elif TOTAL_SECONDS >= (UNSHARE_LIMIT * 86400):
                         if DRY_RUN:
                             print('{}, and would unshare libraries.'.format(OUTPUT))
-                        # else:
-                        #     for server in ACCOUNT.user(PLEXUSERS[UID]).servers:
-                        #         if server.machineIdentifier == SERVER.machineIdentifier and server.sections():
-                        #             print('{}, and has reached their inactivity limit. Unsharing.'.format(OUTPUT))
-                        #             ACCOUNT.updateFriend(PLEXUSERS[UID], SERVER, SECTIONS, removeSections=True)
-                        #         else:
-                        #             print("{}, has already been unshared, but has not reached their shareless "
-                        #                   "threshold. Skipping.".format(OUTPUT))
+                        else:
+                            for server in ACCOUNT.user(PLEXUSERS[UID]).servers:
+                                if server.machineIdentifier == SERVER.machineIdentifier and server.sections():
+                                    print('{}, and has reached their inactivity limit. Unsharing.'.format(OUTPUT))
+                                    ACCOUNT.updateFriend(PLEXUSERS[UID], SERVER, SECTIONS, removeSections=True)
+                                else:
+                                    print("{}, has already been unshared, but has not reached their shareless "
+                                          "threshold. Skipping.".format(OUTPUT))
             # endregion
         infrequent.start()
         frequent.start()
@@ -1326,18 +1325,18 @@ if not botConfigured:
                     values = ("!configure", "fromDirectMessage", str(message.author.name), str(message.author.id),
                               str(date1), str(message.content))
                     recordCommandHistory(DB_CONNECTION, values)
-                game = discord.Game(name="DM me with " + str(messageArray[6]) + "help")
+                game = discord.Game(name="try " + str(messageArray[6]) + "help")
                 configureMessage = ("Successfully configured. Command prefix is now: **"
-                                    + str(getCommandPrefix(DB_CONNECTION)) + "**" + "\n Restart bot to begin using.")
-                await message.reply(configureMessage)
+                                    + str(getCommandPrefix(DB_CONNECTION)) + "**")
+                await message.channel.send(configureMessage)
                 await client.change_presence(activity=game)
             else:
                 configureMessage = ("incorrect number of parameters. Should have adminDiscordID, "
                                     "botAdminDiscordRole, botChannelID, queuedRoleName, removedRoleName, "
                                     "commandPrefix, and botNotificationsChannelID")
-                await message.reply(configureMessage)
+                await message.Channel.send(configureMessage)
         else:
-            await message.reply("Bot not configured. Please DM me with !configure")
+            await message.channel.send("Bot not configured. Please DM me with !configure")
     # endregion
 else:
     # region bot configured on_message event
@@ -1388,7 +1387,7 @@ else:
                             if message.author.dm_channel is not None:
                                 await message.author.dm_channel.send('Bot Command Prefix updated to: '
                                                                      + str(getCommandPrefix(DB_CONNECTION)))
-                            game = discord.Game(name="DM me with " + str(getCommandPrefix(DB_CONNECTION)) + "help")
+                            game = discord.Game(name="try " + str(getCommandPrefix(DB_CONNECTION)) + "help")
                             await client.change_presence(activity=game)
                         else:
                             if message.author.dm_channel is not None:
@@ -1671,7 +1670,7 @@ else:
                                 updateEmailForDiscordID(DB_CONNECTION, str(messageArray[1]), str(messageArray[2]))
                                 userInfo = getDBInfoForDiscordID(DB_CONNECTION, str(messageArray[1]))
                             if message.author.dm_channel is not None:
-                                await message.author.dm_channel.send('Email updated to ' + str(userInfo[5])
+                                await message.author.dm_channel.send('Email updated to ' + str(userInfo[4])
                                                                      + ' for user: ' + str(userInfo[1]))
                         else:
                             if message.author.dm_channel is not None:
@@ -1701,7 +1700,7 @@ else:
                                                                  '\n' + commandPrefix
                                                                  + 'initplexserver **serverName serverURL serverToken '
                                                                  'checksInactivity invitedDiscordRole tautulliURL '
-                                                                 'tautulliAPIKey inactivityLimit inviteacceptanceLimit**'
+                                                                 'tautulliAPIKey inactivityLimi inviteacceptanceLimit**'
                                                                  '\n---------------------------------------------------'
                                                                  '\n' + commandPrefix
                                                                  + 'listplexservers '
@@ -2053,14 +2052,14 @@ else:
                             values = ("bot channel ping", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
-                    elif message.content == (commandPrefix + 'openspots'):
+                    if message.content == (commandPrefix + 'openspots'):
                         with DB_CONNECTION:
                             values = ("openspots", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                             openspotsCount = getTotalOpenSpots(DB_CONNECTION)
                         await message.reply('There are **' + str(openspotsCount) + '** spots open.')
-                    elif message.content.startswith(commandPrefix + 'inviteme') and "@" in str(messageArray[1]):
+                    if message.content.startswith(commandPrefix + 'inviteme') and "@" in str(messageArray[1]):
                         if message.author.dm_channel is None:
                             try:
                                 await message.author.create_dm()
@@ -2076,7 +2075,7 @@ else:
                         with DB_CONNECTION:
                             recordBotActionHistory(DB_CONNECTION, 'found public inviteme command with email address. '
                                                                   'Deleting for privacy in discord server', 'AUTOMATIC')
-                    elif message.content == (commandPrefix + 'status'):
+                    if message.content == (commandPrefix + 'status'):
                         with DB_CONNECTION:
                             memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
                             values = ("status", "fromBotChannel", str(message.author.name),
@@ -2096,7 +2095,7 @@ else:
                                 await message.reply('You have been queued for an invite.')
                         else:
                             await message.reply('You do not have a status.')
-                    elif message.content == (commandPrefix + 'help'):
+                    if message.content == (commandPrefix + 'help'):
                         with DB_CONNECTION:
                             values = ("help", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
@@ -2109,7 +2108,7 @@ else:
                                                      'of the public channels, you can always **'
                                                    + commandPrefix
                                                    + 'listcommands** to see what I can do for you.')
-                    elif message.content == (commandPrefix + 'listcommands'):
+                    if message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
@@ -2125,11 +2124,10 @@ else:
                                             '\n------------------------------------------------------------------------'
                                             '\n' + commandPrefix + 'listcommands'
                                             '\n------------------------------------------------------------------------'
-                                            '\nDM me with ' + commandPrefix + 'listcommands for additional commands'
-                                            '\n------------------------------------------------------------------------'
                                             )
                     elif message.content.startswith(commandPrefix):
-                        await message.reply('I did not understand that. Try ' + commandPrefix + 'listcommands')
+                        if message.author.dm_channel is not None:
+                            await message.reply('I did not understand that. Try ' + commandPrefix + 'listcommands')
                     # endregion
                 else:
                     # region public anywhere actions
@@ -2139,14 +2137,14 @@ else:
                             values = ("public ping", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
-                    elif message.content == (commandPrefix + 'openspots'):
+                    if message.content == (commandPrefix + 'openspots'):
                         with DB_CONNECTION:
                             values = ("openspots", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                             openspotsCount = getTotalOpenSpots(DB_CONNECTION)
                         await message.reply('There are **' + str(openspotsCount) + '** spots open.')
-                    elif message.content.startswith(commandPrefix + 'inviteme') and "@" in str(messageArray[1]):
+                    if message.content.startswith(commandPrefix + 'inviteme') and "@" in str(messageArray[1]):
                         if message.author.dm_channel is None:
                             try:
                                 await message.author.create_dm()
@@ -2162,7 +2160,7 @@ else:
                         with DB_CONNECTION:
                             recordBotActionHistory(DB_CONNECTION, 'found public inviteme command with email address. '
                                                                   'Deleting for privacy in discord server', 'AUTOMATIC')
-                    elif message.content == (commandPrefix + 'status'):
+                    if message.content == (commandPrefix + 'status'):
                         with DB_CONNECTION:
                             memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
                             values = ("status", "fromPublicChannel", str(message.author.name),
@@ -2182,7 +2180,7 @@ else:
                                 await message.reply('You have been queued for an invite.')
                         else:
                             await message.reply('You do not have a status.')
-                    elif message.content == (commandPrefix + 'help'):
+                    if message.content == (commandPrefix + 'help'):
                         with DB_CONNECTION:
                             values = ("help", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
@@ -2195,7 +2193,7 @@ else:
                                                      'of the public channels, you can always **'
                                                    + commandPrefix
                                                    + 'listcommands** to see what I can do for you.')
-                    elif message.content == (commandPrefix + 'queuestatus'):
+                    if message.content == (commandPrefix + 'queuestatus'):
                         with DB_CONNECTION:
                             values = ("queuestatus", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
@@ -2206,7 +2204,7 @@ else:
                             await message.reply('There are **' + str(queueStatus) + '** queued ahead of you.')
                         else:
                             await message.reply('You are not currently queued.')
-                    elif message.content == (commandPrefix + 'listcommands'):
+                    if message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
@@ -2224,12 +2222,7 @@ else:
                                                    '\n-----------------------------------------------------------------'
                                                    '\n' + commandPrefix + 'listcommands'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\nDM me with ' + commandPrefix + 'listcommands for additional '
-                                                                                     'commands'
-                                                   '\n-----------------------------------------------------------------'
                                                    )
-                    elif message.content.startswith(commandPrefix):
-                        await message.reply('I did not understand that. Try ' + commandPrefix + 'listcommands')
                     # endregion
     # endregion
 
