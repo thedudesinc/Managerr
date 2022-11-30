@@ -294,11 +294,18 @@ def cancelPendingInvitesOverXDays(days):
                 Server = PlexServer(baseurl=str(plexServerInfo[2]), token=str(plexServerInfo[3]), session=localSession)
                 Account = Server.myPlexAccount()
                 pendingInvites = Account.pendingInvites(includeSent=True, includeReceived=False)
-                for invite in pendingInvites:
-                    if invite.createdAt < datetime.datetime.now() - datetime.timedelta(days=days):
-                        Account.cancelInvite(invite)
+                try:
+                    for invite in pendingInvites:
+                        if str(invite) != '<MyPlexInvite:nan>':
+                            if invite.createdAt < datetime.datetime.now() - datetime.timedelta(days=days):
+                                Account.cancelInvite(str(invite.email))
+                except Exception as e:
+                    print('Exception from cancelPendingInvitesOverXDays for invite email: '
+                          + str(invite.email) + ', server:' + str(invite.servers) + ', error: ' + str(e))
+                    continue
             except Exception as e:
-                print('Exception from cancelPendingInvitesOverXDays: ' + str(e))
+                print('Exception from server loop of cancelPendingInvitesOverXDays' + str(e))
+                continue
         else:
             print("didnt get a whole row from the database")
     return
@@ -609,6 +616,7 @@ def inviteEmailToPlex(conn, email, values):
         inviteSuccess = True
     except Exception as e:
         print('error from inviteEmailToPlex: ' + str(e))
+        inviteSuccess = False
     if inviteSuccess:
         try:
             with DB_CONNECTION:
@@ -619,7 +627,7 @@ def inviteEmailToPlex(conn, email, values):
             print('error from within invite success: ' + str(e))
     else:
         print("invite success is not true for some reason")
-    return
+    return inviteSuccess
 
 
 def inviteQueuedEmailToPlex(conn, discordID, serverName, email, guildID):
@@ -1012,8 +1020,11 @@ else:
                     from urllib3 import disable_warnings
                     from urllib3.exceptions import InsecureRequestWarning
                     disable_warnings(InsecureRequestWarning)
-                SERVER = PlexServer(baseurl=str(plex[2]), token=str(plex[3]), session=localSession)
-                ACCOUNT = SERVER.myPlexAccount()
+                try:
+                    SERVER = PlexServer(baseurl=str(plex[2]), token=str(plex[3]), session=localSession)
+                    ACCOUNT = SERVER.myPlexAccount()
+                except Exception as e:
+                    print('Error getting server object. Error: ' + str(e))
                 try:
                     usersList = ACCOUNT.users()
                     # if i needed to make sure status's were 2, then use below
@@ -1106,6 +1117,12 @@ else:
                                       + emailForOldestQueued + ' error: ' + str(e))
                     # endregion
             # check for discordID exists in database but not member of guild. delete from plex, tautulli and db
+            # for user in discordUsersList:
+            #     member = discord.utils.get(thisGuild.members, id=int(user[1]))
+            #     if member is not None:
+            #         print('USER from db: ' + user[1] + ' and member info: ' + str(member.id))
+            #     else:
+            #         print('did not find a member id in guild that matches this discord id from db: ' + user[1])
             for user in discordUsersList:
                 member = discord.utils.get(thisGuild.members, id=int(user[1]))
                 if member is not None:
@@ -1122,28 +1139,33 @@ else:
                             recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
                                                    + user[10] + ' in database is in list of guild members. '
                                                                 'Status 0', 'AUTOMATIC')
-                            deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            print('would delete here. status 0, db DiscordID: ' + user[1] + ' member ' + str(member))
+                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
                     elif user[10] == '1':
                         # if manualy removed
                         with DB_CONNECTION:
                             recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
                                                    + user[10] + ' in database is in list of guild members. '
                                                                 'Status 1', 'AUTOMATIC')
-                            deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            print('would delete here. status 1, db DiscordID: ' + user[1] + ' member ' + str(member))
+                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
                     elif user[10] == '2':
                         # invited but not accepted yet
                         with DB_CONNECTION:
-                            cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
-                            deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            # cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
+                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            print('would delete here. status 2, db DiscordID: ' + user[1] + ' member ' + str(member))
                             recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[10] + ' in database is in list of guild members. '
-                                                                'Status 2', 'AUTOMATIC')
+                                                   + user[1] + ' in database is in list of guild members. member id:'
+                                                   + str(member.id) +
+                                                                ' Status 2', 'AUTOMATIC')
                             recordBotActionHistory(DB_CONNECTION, 'Canceled Pending invite and deleted from database '
                                                                   'for discordID: ' + user[1], 'AUTOMATIC')
                     elif user[10] == '3':
                         # invited and accepted
                         with DB_CONNECTION:
-                            deleteFromPlexTautulliAndDB(DB_CONNECTION, user[1])
+                            # deleteFromPlexTautulliAndDB(DB_CONNECTION, user[1])
+                            print('would delete here. status 3, db DiscordID: ' + user[1] + ' member ' + str(member))
                             recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
                                                    + user[10] + ' in database is in list of guild members. '
                                                                 'Status 3', 'AUTOMATIC')
@@ -1152,7 +1174,8 @@ else:
                     elif user[10] == '4':
                         # queued for an invite
                         with DB_CONNECTION:
-                            deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            print('would delete here. status 4, db DiscordID: ' + user[1] + ' member ' + str(member))
                             recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
                                                    + user[10] + ' in database is in list of guild members. '
                                                                 'Status 4', 'AUTOMATIC')
@@ -1177,8 +1200,11 @@ else:
                 TAUTULLI_APIKEY = plex[7]
                 REMOVE_LIMIT = int(plex[8])  # Days to allow inactivity before removing.
                 UNSHARE_LIMIT = 30  # Days
-                SERVER = PlexServer(baseurl=str(plex[2]), token=str(plex[3]), session=localSession)
-                ACCOUNT = SERVER.myPlexAccount()
+                try:
+                    SERVER = PlexServer(baseurl=str(plex[2]), token=str(plex[3]), session=localSession)
+                    ACCOUNT = SERVER.myPlexAccount()
+                except Exception as e:
+                    print('error getting server object: ' + str(e))
                 DRY_RUN = False  # set to True to see console output of what users would be removed for inactivity.
                 IGNORE_NEVER_SEEN = False
                 # USERNAME_IGNORE = ['bbock727', 'iainm27']
@@ -1510,7 +1536,9 @@ else:
                                                                          + '\n**serverShare:** '
                                                                          + str(invite.servers[0])
                                                                          + '\n**username:** ' + invite.username
-                                                                         + '\n**friendlyName:** ' + invite.friendlyName)
+                                                                         + '\n**friendlyName:** ' + invite.friendlyName
+                                                                         + '\n-----------------------------------------'
+                                                                         )
                             except Exception as e:
                                 await message.author.dm_channel.send('exception occurred ' + str(e))
                     elif message.content == (commandPrefix + 'help'):
@@ -1809,14 +1837,25 @@ else:
                                     serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
                                     userValues = (str(message.author.id), str(message.author.name), "fromDMNoNickname",
                                                   serverName)
-                                    inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
+                                    successBool = inviteEmailToPlex(DB_CONNECTION, str(messageArray[1]), userValues)
                                     if message.author.dm_channel is not None:
-                                        await message.author.dm_channel.send('You have been invited to ' + serverName
-                                                                             + '. If you do not see an invite, make '
-                                                                               'sure to check spam')
-                                    roleNameToAdd = getInvitedDiscordRoleNameForServerName(DB_CONNECTION, serverName)
-                                    await addRoleForDiscordID(DB_CONNECTION, roleNameToAdd, str(message.author.id),
-                                                              GUILD_ID)
+                                        if successBool:
+                                            await message.author.dm_channel.send(
+                                                'You have been invited to ' + serverName
+                                                + '. If you do not see an invite, make '
+                                                  'sure to check spam')
+                                            roleNameToAdd = getInvitedDiscordRoleNameForServerName(DB_CONNECTION,
+                                                                                                   serverName)
+                                            await addRoleForDiscordID(DB_CONNECTION, roleNameToAdd,
+                                                                      str(message.author.id),
+                                                                      GUILD_ID)
+                                        else:
+                                            await message.author.dm_channel.send(
+                                                'Something went wrong with your invite. This is what you sent me '
+                                                '(without the double dash): --'
+                                                + str(message.content)
+                                                + '--. This is what it should look like '
+                                                + commandPrefix + 'inviteme email@address.com')
                                 else:
                                     with DB_CONNECTION:
                                         qValues = (str(message.author.id), str(message.author.name),
