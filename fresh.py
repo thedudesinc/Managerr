@@ -653,6 +653,7 @@ def inviteQueuedEmailToPlex(conn, discordID, serverName, email, guildID):
         inviteSuccess = True
     except Exception as e:
         print('error from inviteQueuedEmailToPlex: ' + str(e))
+        inviteSuccess = False
     if inviteSuccess:
         try:
             serverDiscordRole = rowTuple[5]
@@ -664,7 +665,7 @@ def inviteQueuedEmailToPlex(conn, discordID, serverName, email, guildID):
             print('error from within invite success: ' + str(e))
     else:
         print("invite success is not true for some reason")
-    return
+    return inviteSuccess
 
 
 async def addRoleForDiscordID(conn, discordRoleName, discordID, guildID):
@@ -1006,7 +1007,7 @@ else:
         # region repeated actions by the bot
         @loop(minutes=15)
         async def frequent():
-            print('frequent loop is running ' + str(datetime.datetime.now()))
+            print('frequent loop is Started: ' + str(datetime.datetime.now()))
             with DB_CONNECTION:
                 plexServers = getListOfPlexServers(DB_CONNECTION)
                 databaseUsersNoUsername = getUsersNoUsername(DB_CONNECTION)
@@ -1104,9 +1105,12 @@ else:
                                     emailForOldestQueued = getEmailForDiscordID(DB_CONNECTION,
                                                                                 discordIDForOldestQueued)
                                 if discordIDForOldestQueued != '':
-                                    inviteQueuedEmailToPlex(DB_CONNECTION, discordIDForOldestQueued, serverName,
-                                                            emailForOldestQueued, GUILD_ID)
+                                    successBool = inviteQueuedEmailToPlex(DB_CONNECTION, discordIDForOldestQueued,
+                                                                          serverName, emailForOldestQueued, GUILD_ID)
+                                    # if successBool:
                                     # dm user that they have been invited.
+                                    # else DM them/admin that something went wrong.
+                                    # if DMing the admin include discord ID and email address value
                             except Exception as e:
                                 with DB_CONNECTION:
                                     recordBotActionHistory(DB_CONNECTION, 'something went wrong inviting user: '
@@ -1181,10 +1185,11 @@ else:
                                                                 'Status 4', 'AUTOMATIC')
                             recordBotActionHistory(DB_CONNECTION, 'Removed queued user from database by '
                                                                   'discordID: ' + user[1], 'AUTOMATIC')
+            print('frequent loop is Finished: ' + str(datetime.datetime.now()))
 
         @loop(hours=48)
         async def infrequent():
-            print("Infrequent Task Run task run " + str(datetime.datetime.now()))
+            print('infrequent loop is Started: ' + str(datetime.datetime.now()))
             # region Check for Inactive Users and Remove
             with DB_CONNECTION:
                 checksList = getListOfPlexThatChecks(DB_CONNECTION)
@@ -1352,6 +1357,7 @@ else:
                         #             print("{}, has already been unshared, but has not reached their shareless "
                         #                   "threshold. Skipping.".format(OUTPUT))
             # endregion
+            print('infrequent loop is Finished: ' + str(datetime.datetime.now()))
         infrequent.start()
         frequent.start()
         print("The bot is ready!")
@@ -1567,19 +1573,22 @@ else:
                         if len(messageArray) == 2:
                             dbInfo = getDBInfoForDiscordID(DB_CONNECTION, str(messageArray[1]))
                             if message.author.dm_channel is not None:
-                                await message.author.dm_channel.send('**discordID:**  ' + str(dbInfo[1])
-                                                                     + '\n**discordUsername:**  ' + str(dbInfo[2])
-                                                                     + '\n**discordServerNickname:**  '
-                                                                     + str(dbInfo[3])
-                                                                     + '\n**plexUsername:**  ' + str(dbInfo[4])
-                                                                     + '\n**plexEmailAddress:**  ' + str(dbInfo[5])
-                                                                     + '\n**serverName:**  ' + str(dbInfo[6])
-                                                                     + '\n**dateRemoved:**  ' + str(dbInfo[7])
-                                                                     + '\n**dateInvited:**  ' + str(dbInfo[8])
-                                                                     + '\n**dateQueued:**  ' + str(dbInfo[9])
-                                                                     + '\n**status:**  ' + str(dbInfo[10])
-                                                                     + '\n**plexUserID:**  ' + str(dbInfo[11])
-                                                                     )
+                                if dbInfo != []:
+                                    await message.author.dm_channel.send('**discordID:**  ' + str(dbInfo[1])
+                                                                         + '\n**discordUsername:**  ' + str(dbInfo[2])
+                                                                         + '\n**discordServerNickname:**  '
+                                                                         + str(dbInfo[3])
+                                                                         + '\n**plexUsername:**  ' + str(dbInfo[4])
+                                                                         + '\n**plexEmailAddress:**  ' + str(dbInfo[5])
+                                                                         + '\n**serverName:**  ' + str(dbInfo[6])
+                                                                         + '\n**dateRemoved:**  ' + str(dbInfo[7])
+                                                                         + '\n**dateInvited:**  ' + str(dbInfo[8])
+                                                                         + '\n**dateQueued:**  ' + str(dbInfo[9])
+                                                                         + '\n**status:**  ' + str(dbInfo[10])
+                                                                         + '\n**plexUserID:**  ' + str(dbInfo[11])
+                                                                         )
+                                else:
+                                    await message.author.dm_channel.send('Did not find anything for that discord id')
                     elif message.content.startswith(commandPrefix + 'updateinactivitydays'):
                         with DB_CONNECTION:
                             values = ("updateinactivitydays", "fromAdminDM", str(message.author.name),
@@ -1830,7 +1839,7 @@ else:
                                 recordCommandHistory(DB_CONNECTION, values)
                                 existsAlready = checkDiscordIDExists(DB_CONNECTION, str(message.author.id))
                                 if existsAlready:
-                                    statusForMember = (DB_CONNECTION, str(message.author.id))
+                                    statusForMember = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
                                     emailForMember = getEmailForDiscordID(DB_CONNECTION, str(message.author.id))
                             if not existsAlready:
                                 if getTotalOpenSpots(DB_CONNECTION) > 0:
@@ -1881,7 +1890,7 @@ else:
                                                                              'there are open spots now, so you have '
                                                                              'been re-invited. \n You have been '
                                                                              'invited to '
-                                                                             + serverName
+                                                                             + serverName + '\n'
                                                                              + '. If you do not see an invite make sure'
                                                                                ' to check spam/junk'
                                                                              )
@@ -1891,7 +1900,7 @@ else:
                                 elif statusForMember == '0' and getTotalOpenSpots(DB_CONNECTION) == 0:
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You were removed for inactivity and there'
-                                                                             ' are currently no spots open. You have '
+                                                                             ' are currently no spots open. \nYou have '
                                                                              'been added to the queue for an invite'
                                                                              )
                                     roleNameToRemove = botConfigInfo[4]
@@ -1903,14 +1912,14 @@ else:
                                 elif statusForMember == '1':
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You were manually removed by an admin. '
-                                                                             'Please message the admin with any '
+                                                                             '\nPlease message the admin with any '
                                                                              'questions'
                                                                              )
                                 elif statusForMember == '2' and emailForMember == str(messageArray[1]):
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('An invite has already been sent for that '
                                                                              'email address, but it has not been '
-                                                                             'accepted yet. Please accept the invite '
+                                                                             'accepted yet. \nPlease accept the invite '
                                                                              'and do not forget to check your spam if '
                                                                              'you cannot find it.'
                                                                              )
@@ -1922,16 +1931,16 @@ else:
                                                                              + commandPrefix
                                                                              + 'inviteme command you can leave the '
                                                                                'discord server to be removed from my '
-                                                                               'memory. Then you can DM me the '
+                                                                               'memory. \nThen you can DM me the '
                                                                              + commandPrefix
                                                                              + 'inviteme command again with the correct'
-                                                                               ' info. This will place you at the '
-                                                                               'bottom of the invite queue.'
+                                                                               ' info. \nThis might place you at the'
+                                                                               ' bottom of the invite queue.'
                                                                              )
                                 elif statusForMember == '3' and emailForMember != str(messageArray[1]):
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You have already accepted an invite for a'
-                                                                             ' different email address. If you are '
+                                                                             ' different email address. \nIf you are '
                                                                              'trying to get an invite for someone else,'
                                                                              ' please have them join the discord '
                                                                              'server and DM me the '
@@ -1941,16 +1950,17 @@ else:
                                 elif statusForMember == '3' and emailForMember == str(messageArray[1]):
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You have already accepted an invite for '
-                                                                             'that email address. If you are having an '
-                                                                             'problems please message the admin.')
+                                                                             'that email address. \nIf you are having '
+                                                                             'any problems please message the admin.'
+                                                                             )
                                 elif statusForMember == '4' and emailForMember == str(messageArray[1]):
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You have already been queued for an '
-                                                                             'invite to that email address. If you '
+                                                                             'invite to that email address. \nIf you '
                                                                              'want to see your place in the queue, '
                                                                              'try the '
                                                                              + commandPrefix
-                                                                             + 'queuestatus')
+                                                                             + 'queuestatus command')
                                 elif statusForMember == '4' and emailForMember != str(messageArray[1]):
                                     if message.author.dm_channel is not None:
                                         await message.author.dm_channel.send('You have already been added to the '
@@ -1959,7 +1969,9 @@ else:
                                                                              'you first used the command, leave the '
                                                                              'discord and rejoin. \nThis will clear '
                                                                              'you from my memory and you can DM me '
-                                                                             'the inviteme command with the correct '
+                                                                             'the '
+                                                                             + commandPrefix
+                                                                             + 'inviteme command with the correct '
                                                                              'address. \nThis will reset your '
                                                                              'position in the queue. If you are '
                                                                              'trying to get an invite for someone '
@@ -2143,6 +2155,7 @@ else:
                         with DB_CONNECTION:
                             recordBotActionHistory(DB_CONNECTION, 'found public inviteme command with email address. '
                                                                   'Deleting for privacy in discord server', 'AUTOMATIC')
+                    # elif message.content.contains()
                     elif message.content == (commandPrefix + 'status'):
                         with DB_CONNECTION:
                             memberStatus = getStatusForDiscordID(DB_CONNECTION, str(message.author.id))
