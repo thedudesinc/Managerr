@@ -16,6 +16,8 @@ database = r"BotDB.db"
 DB_CONNECTION = None
 botConfigured = None
 CLIENT_TOKEN = "MTA0NTQzNTMyMjkxMTE3ODgzMg.G8sx3m.WJRT222gc2DKbra_9jZE3UtZbkq_njnx9tAThE"
+
+
 # endregion
 
 
@@ -893,7 +895,7 @@ def getInvitedDiscordRoleNameForServerName(conn, serverName):
 
 def deleteFromDBForDiscordID(conn, discordID):
     try:
-        cur = conn. cursor()
+        cur = conn.cursor()
         cur.execute('delete from Users where discordID = (?)', (discordID,))
         recordBotActionHistory(conn, 'deleted from users table by discordID: ' + str(discordID), 'AUTOMATIC')
     except Exception as e:
@@ -965,6 +967,109 @@ def deleteFromPlexTautulliAndDB(conn, discordID):
     except Exception as e:
         print('exception from deleteFromPlexTautulliAndDB: ' + str(e))
     return
+
+
+def getWatchTimeForDiscordID(conn, discordID):
+    watchTimeForDiscordID = 0
+    try:
+        userInfo = getDBInfoForDiscordID(conn, discordID)
+        if userInfo:
+            plexInfo = getPlexServerConfigInfoForName(conn, userInfo[6])
+            if plexInfo:
+                TAUTULLI_URL = plexInfo[6]
+                TAUTULLI_API_KEY = plexInfo[7]
+                userID = userInfo[11]
+                queryDays = plexInfo[8]
+                localSession = Session()
+                localSession.verify = False
+                if not localSession.verify:
+                    # Disable the warning that the request is insecure, we know that...
+                    from urllib3 import disable_warnings
+                    from urllib3.exceptions import InsecureRequestWarning
+                    disable_warnings(InsecureRequestWarning)
+                PARAMS = {
+                    'cmd': 'get_user_watch_time_stats',
+                    'user_id': userID,
+                    'query_days': queryDays,
+                    'apikey': TAUTULLI_API_KEY
+                }
+                GET = localSession.get(TAUTULLI_URL.rstrip('/') + '/api/v2', params=PARAMS).json()['response']['data']
+                getList = GET[0]
+                watchTimeForDiscordID = getList['total_time']
+                # print(str(getList))
+        else:
+            watchTimeForDiscordID = 0
+    except Exception as e:
+        print('exception from getWatchTimeForDiscordID: ' + str(e))
+    return watchTimeForDiscordID
+
+
+def getCurrentStreams(conn):
+    currentStreams = []
+    try:
+        servers = getListOfPlexServers(conn)
+        for server in servers:
+            stream = []
+            tautulli_url = server[6]
+            tautulli_apikey = server[7]
+            PARAMS = {
+                'cmd': 'get_activity',
+                'apikey': tautulli_apikey
+            }
+            localSession = Session()
+            localSession.verify = False
+            if not localSession.verify:
+                # Disable the warning that the request is insecure, we know that...
+                from urllib3 import disable_warnings
+                from urllib3.exceptions import InsecureRequestWarning
+            GET = localSession.get(tautulli_url.rstrip('/') + '/api/v2', params=PARAMS).json()['response']['data']
+            if GET:
+                stream.append(server[1])
+                stream.append(GET['stream_count'])
+                stream.append(GET['stream_count_direct_play'])
+                stream.append(GET['stream_count_direct_stream'])
+                stream.append(GET['stream_count_transcode'])
+                stream.append(GET['total_bandwidth'])
+                currentStreams.append(stream)
+    except Exception as e:
+        print('exception from getCurrentStreams: ' + str(e))
+
+    return currentStreams
+
+
+def listPendingInvitesForServer(server):
+    listPendingInvites = []
+    localSession = Session()
+    localSession.verify = False
+    if not localSession.verify:
+        # Disable the warning that the request is insecure, we know that...
+        from urllib3 import disable_warnings
+        from urllib3.exceptions import InsecureRequestWarning
+        disable_warnings(InsecureRequestWarning)
+    try:
+        Server = PlexServer(baseurl=str(server[2]), token=str(server[3]), session=localSession)
+        Account = Server.myPlexAccount()
+        pendingInvites = Account.pendingInvites(includeSent=True, includeReceived=False)
+        for invite in pendingInvites:
+            listPendingInvites.append(invite)
+    except Exception as e:
+        print('Exception from listPendingInvitesForServer: ' + str(e))
+    return listPendingInvites
+
+
+def checkForMatchingPendingInvite(conn, servername, email):
+    matchingPendingInvite = False
+    server = getPlexServerConfigInfoForName(conn, servername)
+    pendingInvites = listPendingInvitesForServer(server)
+    for invite in pendingInvites:
+        if invite.email == email:
+            matchingPendingInvite = True
+            break
+        else:
+            matchingPendingInvite = False
+    return matchingPendingInvite
+
+
 # endregion
 
 
@@ -981,7 +1086,6 @@ except Error as e:
 
 with DB_CONNECTION:
     botConfigured = getBotConfiguredBool(DB_CONNECTION)
-
 
 # region Client Events
 if not botConfigured:
@@ -1002,6 +1106,7 @@ else:
         game = discord.Game(name="DM me with " + commandPrefix + "help")
         thisGuild = client.get_guild(GUILD_ID)
         await client.change_presence(activity=game)
+
         # endregion
 
         # region repeated actions by the bot
@@ -1014,6 +1119,7 @@ else:
                 databaseUsersNoPlexID = getUsersNoPlexID(DB_CONNECTION)
                 discordUsersList = getUsersListFromDB(DB_CONNECTION)
             for plex in plexServers:
+                # region get dictionaries of users from plex
                 localSession = Session()
                 localSession.verify = False
                 if not localSession.verify:
@@ -1039,7 +1145,7 @@ else:
                         recordBotActionHistory(DB_CONNECTION, 'error from trying to get plex users for plex server: '
                                                + str(plex[1]) + ' error: ' + str(e), 'AUTOMATIC')
                     print('error from trying to get plex users for plex server: ' + str(plex[1]) + ' error: ' + str(e))
-
+                # endregion
                 if gotServerUsersSuccess:
                     date1 = datetime.datetime.now()
                     # region update status for plex user in database
@@ -1087,7 +1193,7 @@ else:
                                     updateBotActionHistory(DB_CONNECTION, valuesToSend)
                     # endregion
                     # region cancel pending invites over (server number) days
-                    cancelPendingInvitesOverXDays(int(plex[9]))
+                    # cancelPendingInvitesOverXDays(int(plex[9]))
                     # endregion
                     # region invite queued users if openspots
                     with DB_CONNECTION:
@@ -1120,71 +1226,111 @@ else:
                                       + discordIDForOldestQueued + ' email: '
                                       + emailForOldestQueued + ' error: ' + str(e))
                     # endregion
-            # check for discordID exists in database but not member of guild. delete from plex, tautulli and db
+            # region check If DB user is member of discord guild and act
+            if not True:
+                for user in discordUsersList:
+                    member = discord.utils.get(thisGuild.members, id=int(user[1]))
+                    if member is not None: # if they are a member of the guild
+                        if user[10] == '2': # pending invite acceptance
+                            matchingPendingInvite = checkForMatchingPendingInvite(DB_CONNECTION, user[6], user[5])
+                            if not matchingPendingInvite: # if there is NOT a matching pending invite
+                                # updateToRemovedForInvitedDiscordID(DB_Connection, discordID, serverName)
+                                # DM the user that their status has been changed.
+                                print('user: ' + user[2] + ' status of pending invite, but didnt match any pending '
+                                      'invites. update status to 0 and dm the user about it.')
+                        elif user[10] == '4': # queued for invite
+                            with DB_CONNECTION:
+                                numOpenSpots = getTotalOpenSpots(DB_CONNECTION)
+                            if numOpenSpots > 0:
+                                with DB_CONNECTION:
+                                    serverName = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                                    # inviteQueuedEmailToPlex(DB_CONNECTION, user[1], serverName, user[5], GUILD_ID)
+                                    print('user in DB and in guild: found a queued user and there were open spots, '
+                                          'sending them an invite.')
+                    else: # if not a member of the discord guild.
+                        if user[10] == '3':
+                            print('user is in database but not in guild, and they are listed as accepting an invite. '
+                                  'Remove from plex, tautulli, and DB')
+                        elif user[10] == '2':
+                            matchingPendingInvite = checkForMatchingPendingInvite(DB_CONNECTION, user[6], user[5])
+                            if matchingPendingInvite:
+                                with DB_CONNECTION:
+                                    thing = ''
+                                    # cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
+                                    # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                                print('user in db but not guild, found a matching pending invite, so canceled it, and '
+                                      'removed them from database')
+                            else:
+                                with DB_CONNECTION:
+                                    thing = ''
+                                    # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                                print('user in db but not guild, no matching pending invite, just delete from database')
+                        else:
+                            with DB_CONNECTION:
+                                thing = ''
+                                # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+                            print('user was in db but not in Guild, not invited or pending invite so just remove '
+                                  'from database.')
+            # endregion
+
             # for user in discordUsersList:
             #     member = discord.utils.get(thisGuild.members, id=int(user[1]))
             #     if member is not None:
-            #         print('USER from db: ' + user[1] + ' and member info: ' + str(member.id))
+            #         # print('there is nothing to do. db entry for member matches member in guild')
+            #         thing = ''
             #     else:
-            #         print('did not find a member id in guild that matches this discord id from db: ' + user[1])
-            for user in discordUsersList:
-                member = discord.utils.get(thisGuild.members, id=int(user[1]))
-                if member is not None:
-                    # print('there is nothing to do. db entry for member matches member in guild')
-                    thing = ''
-                else:
-                    with DB_CONNECTION:
-                        recordBotActionHistory(DB_CONNECTION, 'record for discordID: '
-                                               + user[1] + ' in database but they are not a member of the guild. '
-                                                           'Delete from everywhere', 'AUTOMATIC')
-                    if user[10] == '0':
-                        # if removed for inactivity
-                        with DB_CONNECTION:
-                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[10] + ' in database is in list of guild members. '
-                                                                'Status 0', 'AUTOMATIC')
-                            print('would delete here. status 0, db DiscordID: ' + user[1] + ' member ' + str(member))
-                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
-                    elif user[10] == '1':
-                        # if manualy removed
-                        with DB_CONNECTION:
-                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[10] + ' in database is in list of guild members. '
-                                                                'Status 1', 'AUTOMATIC')
-                            print('would delete here. status 1, db DiscordID: ' + user[1] + ' member ' + str(member))
-                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
-                    elif user[10] == '2':
-                        # invited but not accepted yet
-                        with DB_CONNECTION:
-                            # cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
-                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
-                            print('would delete here. status 2, db DiscordID: ' + user[1] + ' member ' + str(member))
-                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[1] + ' in database is in list of guild members. member id:'
-                                                   + str(member.id) +
-                                                                ' Status 2', 'AUTOMATIC')
-                            recordBotActionHistory(DB_CONNECTION, 'Canceled Pending invite and deleted from database '
-                                                                  'for discordID: ' + user[1], 'AUTOMATIC')
-                    elif user[10] == '3':
-                        # invited and accepted
-                        with DB_CONNECTION:
-                            # deleteFromPlexTautulliAndDB(DB_CONNECTION, user[1])
-                            print('would delete here. status 3, db DiscordID: ' + user[1] + ' member ' + str(member))
-                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[10] + ' in database is in list of guild members. '
-                                                                'Status 3', 'AUTOMATIC')
-                            recordBotActionHistory(DB_CONNECTION, 'Removed Friend from Plex, Tautulli, and database by '
-                                                                  'discordID: ' + user[1], 'AUTOMATIC')
-                    elif user[10] == '4':
-                        # queued for an invite
-                        with DB_CONNECTION:
-                            # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
-                            print('would delete here. status 4, db DiscordID: ' + user[1] + ' member ' + str(member))
-                            recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
-                                                   + user[10] + ' in database is in list of guild members. '
-                                                                'Status 4', 'AUTOMATIC')
-                            recordBotActionHistory(DB_CONNECTION, 'Removed queued user from database by '
-                                                                  'discordID: ' + user[1], 'AUTOMATIC')
+            #         with DB_CONNECTION:
+            #             recordBotActionHistory(DB_CONNECTION, 'record for discordID: '
+            #                                    + user[1] + ' in database but they are not a member of the guild. '
+            #                                                'Delete from everywhere', 'AUTOMATIC')
+            #         if user[10] == '0':
+            #             # if removed for inactivity
+            #             with DB_CONNECTION:
+            #                 recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+            #                                        + user[10] + ' in database is in list of guild members. '
+            #                                                     'Status 0', 'AUTOMATIC')
+            #                 print('would delete here. status 0, db DiscordID: ' + user[1] + ' member ' + str(member))
+            #                 # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+            #         elif user[10] == '1':
+            #             # if manualy removed
+            #             with DB_CONNECTION:
+            #                 recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+            #                                        + user[10] + ' in database is in list of guild members. '
+            #                                                     'Status 1', 'AUTOMATIC')
+            #                 print('would delete here. status 1, db DiscordID: ' + user[1] + ' member ' + str(member))
+            #                 # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+            #         elif user[10] == '2':
+            #             # invited but not accepted yet
+            #             with DB_CONNECTION:
+            #                 # cancelPendingInviteForDiscordID(DB_CONNECTION, user[1])
+            #                 # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+            #                 print('would delete here. status 2, db DiscordID: ' + user[1] + ' member ' + str(member))
+            #                 recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+            #                                        + user[1] + ' in database is in list of guild members. member id:'
+            #                                        + str(member.id) +
+            #                                        ' Status 2', 'AUTOMATIC')
+            #                 recordBotActionHistory(DB_CONNECTION, 'Canceled Pending invite and deleted from database '
+            #                                                       'for discordID: ' + user[1], 'AUTOMATIC')
+            #         elif user[10] == '3':
+            #             # invited and accepted
+            #             with DB_CONNECTION:
+            #                 # deleteFromPlexTautulliAndDB(DB_CONNECTION, user[1])
+            #                 print('would delete here. status 3, db DiscordID: ' + user[1] + ' member ' + str(member))
+            #                 recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+            #                                        + user[10] + ' in database is in list of guild members. '
+            #                                                     'Status 3', 'AUTOMATIC')
+            #                 recordBotActionHistory(DB_CONNECTION, 'Removed Friend from Plex, Tautulli, and database by '
+            #                                                       'discordID: ' + user[1], 'AUTOMATIC')
+            #         elif user[10] == '4':
+            #             # queued for an invite
+            #             with DB_CONNECTION:
+            #                 # deleteFromDBForDiscordID(DB_CONNECTION, user[1])
+            #                 print('would delete here. status 4, db DiscordID: ' + user[1] + ' member ' + str(member))
+            #                 recordBotActionHistory(DB_CONNECTION, 'from frequent task. Check if discordID: '
+            #                                        + user[10] + ' in database is in list of guild members. '
+            #                                                     'Status 4', 'AUTOMATIC')
+            #                 recordBotActionHistory(DB_CONNECTION, 'Removed queued user from database by '
+            #                                                       'discordID: ' + user[1], 'AUTOMATIC')
             print('frequent loop is Finished: ' + str(datetime.datetime.now()))
 
         @loop(hours=48)
@@ -1358,11 +1504,11 @@ else:
                         #                   "threshold. Skipping.".format(OUTPUT))
             # endregion
             print('infrequent loop is Finished: ' + str(datetime.datetime.now()))
+
         infrequent.start()
         frequent.start()
         print("The bot is ready!")
     # endregion
-
 
 if not botConfigured:
     # region bot NOT configured on_message event
@@ -1536,14 +1682,22 @@ else:
                             try:
                                 pendingInviteList = listAllPendingInvites()
                                 for invite in pendingInviteList:
-                                    await message.author.dm_channel.send('**inviteSent:** ' + str(invite.createdAt)
-                                                                         + '\n**email:** ' + invite.email
-                                                                         + '\n**isFriend:** ' + str(invite.friend)
+                                    await message.author.dm_channel.send('**Is nan?:** '
+                                                                         + str(invite)
+                                                                         + '\n**inviteSent:** '
+                                                                         + str(invite.createdAt)
+                                                                         + '\n**email:** '
+                                                                         + invite.email
+                                                                         + '\n**isFriend:** '
+                                                                         + str(invite.friend)
                                                                          + '\n**serverShare:** '
                                                                          + str(invite.servers[0])
-                                                                         + '\n**username:** ' + invite.username
-                                                                         + '\n**friendlyName:** ' + invite.friendlyName
-                                                                         + '\n-----------------------------------------'
+                                                                         + '\n**username:** '
+                                                                         + invite.username
+                                                                         + '\n**friendlyName:** '
+                                                                         + invite.friendlyName
+                                                                         + '\n------------------------------------'
+                                                                           '-----------------'
                                                                          )
                             except Exception as e:
                                 await message.author.dm_channel.send('exception occurred ' + str(e))
@@ -1751,6 +1905,42 @@ else:
                             openspotsCount = getTotalOpenSpots(DB_CONNECTION)
                         await message.reply('There are **' + str(openspotsCount) + '** spots open.',
                                             mention_author=False)
+                    elif message.content.startswith(commandPrefix + 'watchtimediscordid'):
+                        with DB_CONNECTION:
+                            values = ("watchtimediscordid", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                        if len(messageArray) == 2:
+                            with DB_CONNECTION:
+                                watchTime = getWatchTimeForDiscordID(DB_CONNECTION, str(messageArray[1]))
+                            prettyTime = time_format(watchTime)
+                            if message.author.dm_channel is not None:
+                                if watchTime != 0:
+                                    await message.author.dm_channel.send('Watch Time for that discord ID is : '
+                                                                     + prettyTime)
+                                else:
+                                    await message.author.dm_channel.send('No watch time for that discord ID')
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('misuse of command, should look like **'
+                                                                     + commandPrefix
+                                                                     + 'watchtimediscordid discordid**')
+                    elif message.content == (commandPrefix + 'currentstreams'):
+                        with DB_CONNECTION:
+                            values = ("currentstreams", "fromAdminDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            streamList = getCurrentStreams(DB_CONNECTION)
+                        if message.author.dm_channel is not None:
+                            for stream in streamList:
+                                await message.author.dm_channel.send('**Server:** ' + str(stream[0])
+                                                                     + '\n**Stream Count:** ' + str(stream[1])
+                                                                     + '\n--**Direct Play:** ' + str(stream[2])
+                                                                     + '\n--**Direct Stream:** ' + str(stream[3])
+                                                                     + '\n--**Transcode:** ' + str(stream[4])
+                                                                     + '\n**Total Bandwidth:** '
+                                                                     + str(stream[5] / 1000) + 'mbps'
+                                                                     )
                     elif message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "privateNoNickname", str(message.author.name),
@@ -1759,63 +1949,69 @@ else:
                         if message.author.dm_channel is not None:
                             await message.author.dm_channel.send('Command prefix is: **' + commandPrefix + '**\n'
                                                                  + commandPrefix + 'updatebotchannelid **channelid**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                                   '\n---------------------------------------------------'
+                                                                                   '\n' + commandPrefix
                                                                  + 'updatecommandprefix **newprefix**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'initplexserver **serverName serverURL serverToken '
-                                                                 'checksInactivity invitedDiscordRole tautulliURL '
-                                                                 'tautulliAPIKey inactivityLimit inviteacceptanceLimit**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   'checksInactivity invitedDiscordRole tautulliURL '
+                                                                   'tautulliAPIKey inactivityLimit inviteacceptanceLimit**'
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'listplexservers '
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'listplexserverswithoutcount'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'clearpendinginvites **days**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'listallpendinginvites '
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'help '
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'dbinfodiscordid **discordid**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updateinactivitydays **serverName days**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updateinviteacceptancelimit **serverName days**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updatetautulliurl **serverName tautulliurl**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updatetautulliapikey **serverName apikey**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updateserverurl **serverName serverURL**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updateservertoken **serverName serverToken**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updatechecksinactivity **serverName YES/NO**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'updateemailforuser **discordid email**'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'openspots'
-                                                                 '\n---------------------------------------------------'
-                                                                 '\n' + commandPrefix
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
+                                                                 + 'watchtimediscordid **discordid**'
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
+                                                                 + 'currentstreams'
+                                                                   '\n---------------------------------------------------'
+                                                                   '\n' + commandPrefix
                                                                  + 'listcommands'
-                                                                 '\n---------------------------------------------------'
+                                                                   '\n---------------------------------------------------'
                                                                  )
                     elif message.content.startswith(commandPrefix):
                         if message.author.dm_channel is not None:
@@ -1972,15 +2168,15 @@ else:
                                                                              'the '
                                                                              + commandPrefix
                                                                              + 'inviteme command with the correct '
-                                                                             'address. \nThis will reset your '
-                                                                             'position in the queue. If you are '
-                                                                             'trying to get an invite for someone '
-                                                                             'else, have them join the discord server'
-                                                                             ' and DM me the inviteme command. \nIf '
-                                                                             'you are ok with possibly waiting, you '
-                                                                             'can message the admin that you made a '
-                                                                             'typo, and they can correct it without '
-                                                                             'losing your place in the queue.'
+                                                                               'address. \nThis will reset your '
+                                                                               'position in the queue. If you are '
+                                                                               'trying to get an invite for someone '
+                                                                               'else, have them join the discord server'
+                                                                               ' and DM me the inviteme command. \nIf '
+                                                                               'you are ok with possibly waiting, you '
+                                                                               'can message the admin that you made a '
+                                                                               'typo, and they can correct it without '
+                                                                               'losing your place in the queue.'
                                                                              )
                                 else:
                                     if message.author.dm_channel is not None:
@@ -2095,13 +2291,34 @@ else:
                                                                      )
                             else:
                                 await message.author.dm_channel.send('I do not remember you.')
+                    elif message.content == (commandPrefix + 'mywatchtime'):
+                        with DB_CONNECTION:
+                            values = ("mywatchtime", "fromUserDM", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            watchTime = getWatchTimeForDiscordID(DB_CONNECTION, message.author.id)
+                            userInfo = getDBInfoForDiscordID(DB_CONNECTION, message.author.id)
+                            plexInfo = getPlexServerConfigInfoForName(DB_CONNECTION, userInfo[6])
+                        if watchTime != 0:
+                            prettyTime = time_format(watchTime)
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('Your watch time is: '
+                                                                     + prettyTime
+                                                                     + ' within the last '
+                                                                     + plexInfo[8]
+                                                                     + ' days'
+                                                                     )
+                        else:
+                            if message.author.dm_channel is not None:
+                                await message.author.dm_channel.send('You do not have any watch time recorded')
                     elif message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "fromUserDM", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         if message.author.dm_channel is not None:
-                            await message.author.dm_channel.send('Command prefix is: **' + commandPrefix + '**\n'
+                            await message.author.dm_channel.send('Command prefix is: **'
+                                                                 + commandPrefix + '**\n'
                                                                  '\n' + commandPrefix + 'inviteme **email@address.com**'
                                                                  '\n---------------------------------------------------'
                                                                  '\n' + commandPrefix + 'status'
@@ -2113,6 +2330,8 @@ else:
                                                                  '\n' + commandPrefix + 'queuestatus'
                                                                  '\n---------------------------------------------------'
                                                                  '\n' + commandPrefix + 'yourmemoryofme'
+                                                                 '\n---------------------------------------------------'
+                                                                 '\n' + commandPrefix + 'mywatchtime'
                                                                  '\n---------------------------------------------------'
                                                                  '\n' + commandPrefix + 'listcommands'
                                                                  '\n---------------------------------------------------'
@@ -2182,30 +2401,61 @@ else:
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         await message.reply('Hello! I am the Plex Manager Bot for this discord. For a list of '
-                                                   'my commands try **'
-                                                   + commandPrefix
-                                                   + 'listcommands**. Note that the available commands are context '
-                                                     'dependent, so whether you are messaging me directly, or in one '
-                                                     'of the public channels, you can always **'
-                                                   + commandPrefix
-                                                   + 'listcommands** to see what I can do for you.')
+                                            'my commands try **'
+                                            + commandPrefix
+                                            + 'listcommands**. Note that the available commands are context '
+                                              'dependent, so whether you are messaging me directly, or in one '
+                                              'of the public channels, you can always **'
+                                            + commandPrefix
+                                            + 'listcommands** to see what I can do for you.')
+                    elif message.content.startswith(commandPrefix + 'mywatchtime'):
+                        with DB_CONNECTION:
+                            values = ("mywatchtime", "fromBotChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            watchTime = getWatchTimeForDiscordID(DB_CONNECTION, str(message.author.id))
+                            userInfo = getDBInfoForDiscordID(DB_CONNECTION, str(message.author.id))
+                            plexInfo = getPlexServerConfigInfoForName(DB_CONNECTION, userInfo[6])
+                        prettyTime = time_format(watchTime)
+                        if watchTime != 0:
+                            await message.reply('Your watch time is : '
+                                                + prettyTime + ' over the last ' + plexInfo[8] + ' days')
+                        else:
+                            await message.reply('No watch time recorded for you')
                     elif message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "fromBotChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
-                        await message.reply('Command prefix is **' + commandPrefix + '**\n'
-                                            '\n' + commandPrefix + 'ping '
+                        await message.reply('Command prefix is **'
+                                            + commandPrefix
+                                            + '**\n\n'
+                                            + commandPrefix
+                                            + 'ping '
                                             '\n------------------------------------------------------------------------'
-                                            '\n' + commandPrefix + 'openspots '
+                                            '\n'
+                                            + commandPrefix
+                                            + 'openspots '
                                             '\n------------------------------------------------------------------------'
-                                            '\n' + commandPrefix + 'status '
+                                            '\n'
+                                            + commandPrefix
+                                            + 'status '
                                             '\n------------------------------------------------------------------------'
-                                            '\n' + commandPrefix + 'help '
+                                            '\n'
+                                            + commandPrefix
+                                            + 'help '
                                             '\n------------------------------------------------------------------------'
-                                            '\n' + commandPrefix + 'listcommands'
+                                            '\n'
+                                            + commandPrefix
+                                            + 'mywatchtime '
                                             '\n------------------------------------------------------------------------'
-                                            '\nDM me with ' + commandPrefix + 'listcommands for additional commands'
+                                            '\n'
+                                            + commandPrefix
+                                            + 'listcommands'
+                                            '\n------------------------------------------------------------------------'
+                                            '\nDM me with '
+                                            + commandPrefix
+                                            + 'listcommands for additional commands'
                                             '\n------------------------------------------------------------------------'
                                             )
                     elif message.content.startswith(commandPrefix):
@@ -2268,13 +2518,13 @@ else:
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
                         await message.reply('Hello! I am the Plex Manager Bot for this discord. For a list of '
-                                                   'my commands try **'
-                                                   + commandPrefix
-                                                   + 'listcommands**. Note that the available commands are context '
-                                                     'dependent, so whether you are messaging me directly, or in one '
-                                                     'of the public channels, you can always **'
-                                                   + commandPrefix
-                                                   + 'listcommands** to see what I can do for you.')
+                                            'my commands try **'
+                                            + commandPrefix
+                                            + 'listcommands**. Note that the available commands are context '
+                                              'dependent, so whether you are messaging me directly, or in one '
+                                              'of the public channels, you can always **'
+                                            + commandPrefix
+                                            + 'listcommands** to see what I can do for you.')
                     elif message.content == (commandPrefix + 'queuestatus'):
                         with DB_CONNECTION:
                             values = ("queuestatus", "fromPublicChannel", str(message.author.name),
@@ -2286,26 +2536,58 @@ else:
                             await message.reply('There are **' + str(queueStatus) + '** queued ahead of you.')
                         else:
                             await message.reply('You are not currently queued.')
+                    elif message.content.startswith(commandPrefix + 'mywatchtime'):
+                        with DB_CONNECTION:
+                            values = ("mywatchtime", "fromPublicChannel", str(message.author.name),
+                                      str(message.author.id), str(date1), str(message.content))
+                            recordCommandHistory(DB_CONNECTION, values)
+                            watchTime = getWatchTimeForDiscordID(DB_CONNECTION, str(message.author.id))
+                            userInfo = getDBInfoForDiscordID(DB_CONNECTION, str(message.author.id))
+                            plexInfo = getPlexServerConfigInfoForName(DB_CONNECTION, userInfo[6])
+                        prettyTime = time_format(watchTime)
+                        if watchTime != 0:
+                            await message.reply('Your watch time is : '
+                                                + prettyTime + ' over the last ' + plexInfo[8] + ' days')
+                        else:
+                            await message.reply('No watch time recorded for you')
                     elif message.content == (commandPrefix + 'listcommands'):
                         with DB_CONNECTION:
                             values = ("listcommands", "fromPublicChannel", str(message.author.name),
                                       str(message.author.id), str(date1), str(message.content))
                             recordCommandHistory(DB_CONNECTION, values)
-                        await message.channel.send('Command prefix is: **' + commandPrefix + '**\n'
-                                                   '\n' + commandPrefix + 'ping'
+                        await message.channel.send('Command prefix is: **'
+                                                   + commandPrefix
+                                                   + '**\n\n'
+                                                   + commandPrefix
+                                                   + 'ping'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\n' + commandPrefix + 'openspots'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'openspots'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\n' + commandPrefix + 'status'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'status'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\n' + commandPrefix + 'help'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'help'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\n' + commandPrefix + 'queuestatus'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'queuestatus'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\n' + commandPrefix + 'listcommands'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'mywatchtime'
                                                    '\n-----------------------------------------------------------------'
-                                                   '\nDM me with ' + commandPrefix + 'listcommands for additional '
-                                                                                     'commands'
+                                                   '\n'
+                                                   + commandPrefix
+                                                   + 'listcommands'
+                                                   '\n-----------------------------------------------------------------'
+                                                   '\nDM me with '
+                                                   + commandPrefix
+                                                   + 'listcommands for additional commands'
                                                    '\n-----------------------------------------------------------------'
                                                    )
                     elif message.content.startswith(commandPrefix):
@@ -2334,13 +2616,13 @@ else:
                 recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 0: deleted user from database '
                                                       'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '1':
-            #removed by admin, delete them
+            # removed by admin, delete them
             with DB_CONNECTION:
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
                 recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 1: deleted user from database '
                                                       'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '2':
-            #invited but not accepted
+            # invited but not accepted
             with DB_CONNECTION:
                 cancelPendingInviteForDiscordID(DB_CONNECTION, str(member.id))
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
@@ -2348,14 +2630,14 @@ else:
                                                       'deleted from database for discordID: '
                                        + str(member.id), 'AUTOMATIC')
         elif statusForMember == '3':
-            #invited and accepted
+            # invited and accepted
             with DB_CONNECTION:
                 deleteFromPlexTautulliAndDB(DB_CONNECTION, str(member.id))
                 recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 3: Removed Friend from Plex, '
                                                       'Tautulli, and database by '
                                                       'discordID: ' + str(member.id), 'AUTOMATIC')
         elif statusForMember == '4':
-            #queued for an invite
+            # queued for an invite
             with DB_CONNECTION:
                 deleteFromDBForDiscordID(DB_CONNECTION, str(member.id))
                 recordBotActionHistory(DB_CONNECTION, 'from on_member_remove status 4: Removed queued user from '
@@ -2364,7 +2646,7 @@ else:
         else:
             with DB_CONNECTION:
                 recordBotActionHistory(DB_CONNECTION, 'member left that had no status. Nothing to do except record it '
-                                                      + str(member.id), 'AUTOMATIC')
+                                       + str(member.id), 'AUTOMATIC')
             print('member left. I dont care.')
     # endregion
 # endregion
