@@ -1200,7 +1200,7 @@ def checkForMatchingPendingInvite(conn, servername, email):
     return matchingPendingInvite
 # endregion
 # region ACTIONS
-logging.basicConfig(filename='plexmanager.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', level=logging.ERROR)
+logging.basicConfig(filename='managerr.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', level=logging.ERROR)
 
 try:
     DB_CONNECTION = sqlite3.connect(database)
