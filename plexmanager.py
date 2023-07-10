@@ -10,14 +10,20 @@ import sqlite3
 from sqlite3 import Error
 import sys
 import os
+import io
 from io import StringIO
+import configparser
 
 # region PREBOT
 # region VARIABLES
-
+config = configparser.ConfigParser()
+config.read("bot.config")
+# GUILD_ID = int(config.get("botconfig", "guildid"))
 GUILD_ID = 1045433182822072390
 ANNOUNCEMENT_CHANNEL_ID = 1045449645876334724
+# ANNOUNCEMENT_CHANNEL_ID = int(config.get("botconfig", "announcementchannelid"))
 database = r"BotDB.db"
+# database = config.get("botconfig", "databasename")
 DB_CONNECTION = None
 botConfigured = None
 # endregion
@@ -1211,7 +1217,8 @@ with DB_CONNECTION:
 # endregion
 
 # region BOT VARIABLES
-TOKEN = "MTA0NTQzNTMyMjkxMTE3ODgzMg.G8sx3m.WJRT222gc2DKbra_9jZE3UtZbkq_njnx9tAThE"
+# TOKEN = "tokenvalue"
+TOKEN = config['botconfig']['bottoken']
 intents = discord.Intents.all()
 intents.members = True
 if botConfigured:

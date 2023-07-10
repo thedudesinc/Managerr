@@ -1,0 +1,12 @@
+[botconfig]
+administratordiscordid=12345
+admindiscordrolename=abcdefg
+botchannelid=12345
+queuedrolename=abcdefg
+removedrolename=abcdefg
+commandprefix="!!"
+configured=YES
+botnotificationschannelid=12345
+guildid=12345
+databasename="name.db"
+bottoken="tokentokentoken"
