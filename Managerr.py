@@ -251,6 +251,19 @@ def getDBInfoForDiscordID(conn, discordID):
     return dbInfo
 
 
+def getDBInfoForPlexUsername(conn, plexusername):
+    try:
+        dbInfo = []
+        cur = conn.cursor()
+        cur.execute('select * from Users where plexUsername =(?)', (str(plexusername),))
+        rows = cur.fetchall()
+        if len(rows) == 1:
+            dbInfo = rows[0]
+    except Exception as e:
+        logging.error(f"Error getting db info for plex username: {str(e)}")
+    return dbInfo
+
+
 def getUserCountForPlexServerName(conn, serverName):
     userCountForPlexServerName = 9000
     localSession = Session()
@@ -499,6 +512,15 @@ def updateEmailForDiscordID(conn, discordID, newEmail):
         cur.execute('UPDATE Users SET plexEmailAddress =(?) WHERE discordID =(?)', (str(newEmail), str(discordID),))
     except Exception as e:
         logging.error('Exception from updateEmailForDiscordID: ' + str(e))
+    return
+
+
+def updateServerNameForDiscordID(conn, discordid, newservername):
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE Users SET serverName =(?) WHERE discordID =(?)', (str(newservername), str(discordid),))
+    except Exception as e:
+        logging.error('Exception from updateServerNameForDiscordID: ' + str(e))
     return
 
 
@@ -1837,6 +1859,7 @@ if botConfigured:
                       str(datetime.datetime.now()), str(ctx.message.content))
             recordCommandHistory(DB_CONNECTION, values)
         await ctx.reply(f"https://uptime.thejones.tech/status/pmbp")
+
     # region user Direct message commands
     @bot.command(description="DM ONLY")
     async def inviteme(ctx, email=None):
@@ -2111,8 +2134,22 @@ if botConfigured:
             try:
                 pendingInviteList = listAllPendingInvites()
                 if pendingInviteList != []:
+                    sendList = "```"
                     for invite in pendingInviteList:
-                        await dmChannel.send(f"**Is nan?:** {str(invite)}\n**inviteSent:** {str(invite.createdAt)}\n**email:** {invite.email}\n**isFriend:** {str(invite.friend)}\n**serverShare:** {str(invite.servers[0])}\n**username:** {invite.username}\n**friendlyName:** {invite.friendlyName}\n--------")
+                        sendList += f"**Is nan?:** {str(invite)}\n**inviteSent:** {str(invite.createdAt)}\n**email:** {invite.email}\n**isFriend:** {str(invite.friend)}\n**serverShare:** {str(invite.servers[0])}\n**username:** {invite.username}\n**friendlyName:** {invite.friendlyName}\n--------"
+                    sendList += "```"
+                    if len(sendList) > 1000:
+                        sendlistforfile = ""
+                        sendlistforfile += f"IsNAN?, inviteSentDate, email, isFriend, serverShare, username, friendlyname,\n"
+                        for invite in pendingInviteList:
+                            sendlistforfile += f"{str(invite)}, {str(invite.createdAt)}, {str(invite.email)}, {str(invite.friend)}, {str(invite.servers[0])}, {str(invite.username)}, {str(invite.friendlyName)}\n"
+                        buffer = StringIO(sendlistforfile)
+                        f = discord.File(buffer, filename="pendinginvitelist.txt")
+                        await dmChannel.send(f"Length of message is too long, sending txt file instead\n")
+                        await dmChannel.send(file=f)
+                    else:
+                        await dmChannel.send(f"length of coming message: {str(len(sendList))}")
+                        await dmChannel.send(f"{sendList}")
                 else:
                     await dmChannel.send(f"There are no pending invites.")
             except Exception as e:
@@ -2134,6 +2171,27 @@ if botConfigured:
                     await dmChannel.send(f"There is no info for that discord id")
                 else:
                     await dmChannel.send(f"**discordID:**  {str(dbinfo[1])}\n**discordUsername:**  {str(dbinfo[2])}\n**discordServerNickname:**  {str(dbinfo[3])}\n**plexUsername:**  {str(dbinfo[4])}\n**plexEmailAddress:**  {str(dbinfo[5])}\n**serverName:**  {str(dbinfo[6])}\n**dateRemoved:**  {str(dbinfo[7])}\n**dateInvited:**  {str(dbinfo[8])}\n**dateQueued:**  {str(dbinfo[9])}\n**status:**  {str(dbinfo[10])}\n**plexUserID:**  {str(dbinfo[11])}")
+
+    @bot.command(description="ADMIN")
+    async def dbinfoplex(ctx, plexusername=None):
+        dmChannel = await ctx.author.create_dm()
+        adminID = getAdminDiscordID(DB_CONNECTION)
+        if adminID == str(ctx.author.id):
+            with DB_CONNECTION:
+                values = (
+                f"{bot.command_prefix}dbinfodiscordid", str(ctx.channel), str(ctx.author.name), str(ctx.author.id),
+                str(datetime.datetime.now()), str(ctx.message))
+                recordCommandHistory(DB_CONNECTION, values)
+            if plexusername == None:
+                await dmChannel.send(f"You are missing the plexusername")
+            else:
+                dbinfo = getDBInfoForPlexUsername(DB_CONNECTION, plexusername)
+                if dbinfo == []:
+                    await dmChannel.send(f"There is no info for that plex username")
+                    logging.debug(f"There is no info for that plex username: {str(plexusername)}")
+                else:
+                    await dmChannel.send(
+                        f"**discordID:**  {str(dbinfo[1])}\n**discordUsername:**  {str(dbinfo[2])}\n**discordServerNickname:**  {str(dbinfo[3])}\n**plexUsername:**  {str(dbinfo[4])}\n**plexEmailAddress:**  {str(dbinfo[5])}\n**serverName:**  {str(dbinfo[6])}\n**dateRemoved:**  {str(dbinfo[7])}\n**dateInvited:**  {str(dbinfo[8])}\n**dateQueued:**  {str(dbinfo[9])}\n**status:**  {str(dbinfo[10])}\n**plexUserID:**  {str(dbinfo[11])}")
 
     @bot.command(description="ADMIN")
     async def updateinactivity(ctx, servername=None, numberdays=None):
@@ -2262,6 +2320,24 @@ if botConfigured:
                     updateEmailForDiscordID(DB_CONNECTION, str(discordid), str(newemail))
                     userinfo = getDBInfoForDiscordID(DB_CONNECTION, str(discordid))
                 await dmChannel.send(f"Email updated to {str(userinfo[5])} for user: {str(userinfo[1])}")
+
+    @bot.command(description="ADMIN")
+    async def updateservernameforuser(ctx, discordid=None, servername=None):
+        dmChannel = await ctx.author.create_dm()
+        adminID = getAdminDiscordID(DB_CONNECTION)
+        if adminID == str(ctx.author.id):
+            with DB_CONNECTION:
+                values = (f"{bot.command_prefix}updateservernameforuser", str(ctx.channel), str(ctx.author.name),
+                          str(ctx.author.id), str(datetime.datetime.now()), str(ctx.message))
+                recordCommandHistory(DB_CONNECTION, values)
+            if discordid == None or servername == None:
+                await dmChannel.send(f" you are missing discord id, new servername, or both.")
+            else:
+                with DB_CONNECTION:
+                    # updateEmailForDiscordID(DB_CONNECTION, str(discordid), str(newemail))
+                    updateServerNameForDiscordID(DB_CONNECTION, str(discordid), str(servername))
+                    userinfo = getDBInfoForDiscordID(DB_CONNECTION, str(discordid))
+                await dmChannel.send(f"Server Name updated to {str(userinfo[6])} for user: {str(userinfo[1])}")
 
     @bot.command(description="ADMIN")
     async def watchtime(ctx, discordid=None):
