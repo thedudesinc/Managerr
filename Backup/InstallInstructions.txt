@@ -1,0 +1,30 @@
+Pre-requirements for the plex manager bot:
+-have 1 or more plex servers running to manage.
+-if you intend to have activity based removal, then have 1 tautulli instance per server running and pointed at the plex server(s)
+
+This is recorded from the perspective of creating a new discord server.
+Create your discord server and then create the Application and Bot.
+-https://discordpy.readthedocs.io/en/stable/discord.html
+
+copy the fresh.py and requirements.txt file to your desired location.
+
+run pip install -r requirements.txt from that location in command prompt/shell.
+
+in the fresh.py file:
+-update the GUILD_ID, database path (between the quotes), and CLIENT_TOKEN
+
+Instead of figuring out what permissions are needed in discord:
+-enable all intents.
+-check the bot scope
+-check administrator permissions.
+
+run python fresh.py (you can automate this however you like.)
+
+anywhere the bot can see a message it should reply with the fact that its not configured.
+When you dm it !configure, it will respond with the paramaters it needs you to send.
+
+You'll want to initplexserver first.
+doublecheck every value before you hit enter.
+ especially if you are initilizing more than 1 plex server.
+ 
+after this, you should be able to turn it loose on people to use. Its little game playing message will display the prefix
