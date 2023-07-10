@@ -1,4 +1,6 @@
+import base64
 import discord
+import requests
 from discord.ext import commands, tasks
 import datetime
 from datetime import timedelta
@@ -18,12 +20,12 @@ import configparser
 # region VARIABLES
 config = configparser.ConfigParser()
 config.read("bot.config")
-# GUILD_ID = int(config.get("botconfig", "guildid"))
-GUILD_ID = 1045433182822072390
-ANNOUNCEMENT_CHANNEL_ID = 1045449645876334724
-# ANNOUNCEMENT_CHANNEL_ID = int(config.get("botconfig", "announcementchannelid"))
-database = r"BotDB.db"
-# database = config.get("botconfig", "databasename")
+GUILD_ID = int(config['botconfig']['guildid'])
+# GUILD_ID = 1045433182822072390
+# ANNOUNCEMENT_CHANNEL_ID = 1045449645876334724
+ANNOUNCEMENT_CHANNEL_ID = int(config['botconfig']['announcementchannelid'])
+# database = r"BotDB.db"
+database = config['botconfig']['databasename']
 DB_CONNECTION = None
 botConfigured = None
 # endregion
@@ -1199,8 +1201,12 @@ def checkForMatchingPendingInvite(conn, servername, email):
             matchingPendingInvite = False
     return matchingPendingInvite
 # endregion
+
+
 # region ACTIONS
-logging.basicConfig(filename='managerr.log', filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', level=logging.ERROR)
+# loglevel = config['botconfig']['loglevel']
+logfilename = config['botconfig']['logfilename']
+logging.basicConfig(filename=logfilename, filemode='a', format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG)
 
 try:
     DB_CONNECTION = sqlite3.connect(database)
@@ -1842,69 +1848,99 @@ if botConfigured:
             if email == None or "@" not in str(email):
                 await ctx.author.send(f"Something is wrong with the way you sent that. Your message should look like ```{str(bot.command_prefix)}inviteme email@address.com```")
             else:
-                with DB_CONNECTION:
-                    exists = checkDiscordIDExists(DB_CONNECTION, str(ctx.author.id))
-                    if exists:
-                        status = getStatusForDiscordID(DB_CONNECTION, str(ctx.author.id))
-                        emailformember = getEmailForDiscordID(DB_CONNECTION, str(ctx.author.id))
-                openspots = getTotalOpenSpots(DB_CONNECTION)
-                if not exists: 
-                    if openspots > 0 and openspots < 9000:
-                        servername = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
-                        uservalues = (str(ctx.author.id), str(ctx.author.name), "fromDMNoNickName", servername)
-                        successbool = inviteEmailToPlex(DB_CONNECTION, str(email).lower(), uservalues)
-                        if successbool:
-                            rolename = getInvitedDiscordRoleNameForServerName(DB_CONNECTION, servername)
-                            # await addRoleForDiscordID(DB_CONNECTION, rolename, str(ctx.author.id), GUILD_ID, bot)
-                            await dmChannel.send(f"You have been invited to Plex server **{servername}**. \nIf you do not see the invite email shortly, make sure to check spam.")
+                try:
+                    authstring = f"{config['botconfig']['plexusername']}:{config['botconfig']['plexpassword']}"
+                    authstringbytes = authstring.encode("ascii")
+                    base64bytes = base64.b64encode(authstringbytes)
+                    base64string = base64bytes.decode("ascii")
+                    url = f"https://plex.tv/api/users/validate?invited_email={str(email).lower()}"
+                    payload = {}
+                    headers = {'Authorization': 'Basic ' + base64string}
+                    response = requests.request("POST", url, headers=headers, data=payload)
+                    if response.status_code != 401:
+                        if "Valid user" in response.text:
+                            emailvalid = True
+                            logging.debug(f"email is a valid user")
                         else:
-                            await dmChannel.send(f"Something went wrong trying to invite you with that email address **{str(email)}**.\nPlease make sure you entered it correctly.\nLet the admin know via the **problems** channel if still experiencing issues.")
-                            logging.debug(f"Error inviting user to plex. discordid: {ctx.author.id}, email used: {str(email)}, invited server name: {servername}, user values sent: {str(uservalues)}, message: {str(ctx.message)}")
+                            emailvalid = False
+                            logging.debug(f"Unable to validate that email address, did you send me the correct one? \nMake sure you have already created an account with that email address at https://plex.tv then try again.")
+                            # await dmChannel.send(f"Invalid")
+                    else:
+                        logging.debug(f"Unable to connect for email validation. Response: {str(response)}")
+                        # print(f"unable to connect for validation, please try again later.")
+                        await dmChannel(f"Unable to validate your email address right now. Try again later.")
+                        return
+                except Exception as e:
+                    logging.error(f"Error trying to validate email before inviting: {str(e)}")
+                    await dmChannel(f"Error trying to validate that email address. Try again later.")
+                    return
+                if emailvalid:
+                    with DB_CONNECTION:
+                        exists = checkDiscordIDExists(DB_CONNECTION, str(ctx.author.id))
+                        if exists:
+                            status = getStatusForDiscordID(DB_CONNECTION, str(ctx.author.id))
+                            emailformember = getEmailForDiscordID(DB_CONNECTION, str(ctx.author.id))
+                        openspots = getTotalOpenSpots(DB_CONNECTION)
+                        queueduserscount = len(getUsersQueued(DB_CONNECTION))
+                    if not exists:
+                        if openspots > 0 and openspots < 9000 and queueduserscount == 0:
+                            servername = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                            uservalues = (str(ctx.author.id), str(ctx.author.name), "fromDMNoNickName", servername)
+                            successbool = inviteEmailToPlex(DB_CONNECTION, str(email).lower(), uservalues)
+                            if successbool:
+                                rolename = getInvitedDiscordRoleNameForServerName(DB_CONNECTION, servername)
+                                # await addRoleForDiscordID(DB_CONNECTION, rolename, str(ctx.author.id), GUILD_ID, bot)
+                                await dmChannel.send(f"You have been invited to Plex server **{servername}**. \nIf you do not see the invite email shortly, make sure to check spam.")
+                            else:
+                                await dmChannel.send(f"Something went wrong trying to invite you with that email address **{str(email)}**.\nPlease make sure you entered it correctly.\nLet the admin know via the **problems** channel if still experiencing issues.")
+                                logging.debug(f"Error inviting user to plex. discordid: {ctx.author.id}, email used: {str(email)}, invited server name: {servername}, user values sent: {str(uservalues)}, message: {str(ctx.message)}")
+                        else:
+                            with DB_CONNECTION:
+                                queuevalues = (str(ctx.message.author.id), str(ctx.author.name), str(email).lower(), str(datetime.datetime.now()), '4')
+                                insertQueuedUser(DB_CONNECTION, queuevalues)
+                                currentlyqueued = getUsersQueued(DB_CONNECTION)
+                            await dmChannel.send(f"There are curently no open spots, but you have been queued for a spot.\nThere are currently {len(currentlyqueued)} queued for a spot.\nTo see your status in the queue at anytime, try {bot.command_prefix}queuestatus")
                     else:
                         with DB_CONNECTION:
-                            queuevalues = (str(ctx.message.author.id), str(ctx.author.name), str(email).lower(), str(datetime.datetime.now()), '4')
-                            insertQueuedUser(DB_CONNECTION, queuevalues)
-                            currentlyqueued = getUsersQueued(DB_CONNECTION)
-                        await dmChannel.send(f"There are curently no open spots, but you have been queued for a spot.\nThere are currently {len(currentlyqueued)} queued for a spot.\nTo see your status in the queue at anytime, try {bot.command_prefix}queuestatus")
-                else:
-                    with DB_CONNECTION:
-                        botconfiginfo = getBotConfigurationInfo(DB_CONNECTION)
-                    if status == '0' and openspots > 0 and openspots < 9000:
-                        servername = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
-                        uservalues = (str(ctx.author.id), str(ctx.author.name), "fromDMNoNickName", servername)
-                        successbool = inviteEmailToPlex(DB_CONNECTION, str(email).lower(), uservalues)
-                        if successbool:
+                            botconfiginfo = getBotConfigurationInfo(DB_CONNECTION)
+                        if status == '0' and openspots > 0 and openspots < 9000:
+                            servername = getFirstPlexServerNameWithOpenSpots(DB_CONNECTION)
+                            uservalues = (str(ctx.author.id), str(ctx.author.name), "fromDMNoNickName", servername)
+                            successbool = inviteEmailToPlex(DB_CONNECTION, str(email).lower(), uservalues)
+                            if successbool:
+                                rolenametoremove = botconfiginfo[4]
+                                # await removeRoleForDiscordID(DB_CONNECTION, rolenametoremove, str(ctx.author.id), GUILD_ID, bot)
+                                rolenametoadd = getInvitedDiscordRoleNameForServerName(DB_CONNECTION, servername)
+                                # await addRoleForDiscordID(DB_CONNECTION, rolenametoadd, str(ctx.author.id), GUILD_ID, bot)
+                                await dmChannel.send(f"You were previously removed for inactivity, but there are open spots now, so you have been reinvited.\n You have been invited to plex server **{servername}**")
+                            else:
+                                await dmChannel.send(f"You were in a status of removed/inactive but there were open spots so you should have been added. Something went wrong.\nPlease try again and if the issue persists let the admin know in the **problems** channel.")
+                                logging.error(f"Inviting this user with a removed status was unsuccessful {str(email).lower()}, {str(uservalues)}")
+                        elif status == '0' and (openspots == 0 or openspots == 9000):
                             rolenametoremove = botconfiginfo[4]
                             # await removeRoleForDiscordID(DB_CONNECTION, rolenametoremove, str(ctx.author.id), GUILD_ID, bot)
-                            rolenametoadd = getInvitedDiscordRoleNameForServerName(DB_CONNECTION, servername)
+                            rolenametoadd = botconfiginfo[3]
                             # await addRoleForDiscordID(DB_CONNECTION, rolenametoadd, str(ctx.author.id), GUILD_ID, bot)
-                            await dmChannel.send(f"You were previously removed for inactivity, but there are open spots now, so you have been reinvited.\n You have been invited to plex server **{servername}**")
+                            await dmChannel.send(f"You were previously removed for inactivity, and there are currently NO spots available.\nYou have been queued for an open spot.\nYou can check your queue status with {bot.command_prefix}queuestatus")
+                        elif status == '1':
+                            await dmChannel.send(f"You were manually removed by an admin. You will need to contact them to change your status.")
+                        elif status == '2' and emailformember == str(email).lower():
+                            await dmChannel.send(f"An invite has already been sent to that email address, but it is not seen as accepted yet.\nPlease accept the invite, and check spam if you cannot find the email.")
+                        elif status == '2' and emailformember != str(email).lower():
+                            await dmChannel.send(f"An invite has already been sent to you, but for a different email address. \nIf you made a typo when you first used the **{bot.command_prefix}inviteme** command you can leave the discord server to be removed from the bot database.\nThen you can rejoin the discord server and DM me the **{bot.command_prefix}inviteme** command again with the correct info. \nThis will place you at the bottom of the invite queue.")
+                        elif status == '3' and emailformember != str(email).lower():
+                            await dmChannel.send(f"You have already accepted an invite for a different email address.\nIf you are trying to get an invite for someone else, please have them join the discord server.")
+                        elif status == '3' and emailformember == str(email).lower():
+                            await dmChannel.send(f"You have already accepted an invite for that email address.\nIf you are having problems, please message the admin or post in the **problems** channel")
+                        elif status == '4' and emailformember == str(email).lower():
+                            await dmChannel.send(f"You have already been queued for an invite to that email address.\nTo see your place in the queue try **{bot.command_prefix}queuestatus**")
+                        elif status == '4' and emailformember != str(email).lower():
+                            await dmChannel.send(f"You have already been added to the queue but for a different email address.\nIf this was caused by a typo, leave the discord server, then rejoin and use the **{bot.command_prefix}inviteme** command again.\nThis will reset your position in the queue.\nIf you are trying to queue someone else, instead have them join the discord server and do it themselves.")
                         else:
-                            await dmChannel.send(f"You were in a status of removed/inactive but there were open spots so you should have been added. Something went wrong.\nPlease try again and if the issue persists let the admin know in the **problems** channel.")
-                            logging.error(f"Inviting this user with a removed status was unsuccessful {str(email).lower()}, {str(uservalues)}")
-                    elif status == '0' and (openspots == 0 or openspots == 9000):
-                        rolenametoremove = botconfiginfo[4]
-                        # await removeRoleForDiscordID(DB_CONNECTION, rolenametoremove, str(ctx.author.id), GUILD_ID, bot)
-                        rolenametoadd = botconfiginfo[3]
-                        # await addRoleForDiscordID(DB_CONNECTION, rolenametoadd, str(ctx.author.id), GUILD_ID, bot)
-                        await dmChannel.send(f"You were previously removed for inactivity, and there are currently NO spots available.\nYou have been queued for an open spot.\nYou can check your queue status with {bot.command_prefix}queuestatus")
-                    elif status == '1':
-                        await dmChannel.send(f"You were manually removed by an admin. You will need to contact them to change your status.")
-                    elif status == '2' and emailformember == str(email).lower():
-                        await dmChannel.send(f"An invite has already been sent to that email address, but it is not seen as accepted yet.\nPlease accept the invite, and check spam if you cannot find the email.")
-                    elif status == '2' and emailformember != str(email).lower():
-                        await dmChannel.send(f"An invite has already been sent to you, but for a different email address. \nIf you made a typo when you first used the **{bot.command_prefix}inviteme** command you can leave the discord server to be removed from the bot database.\nThen you can rejoin the discord server and DM me the **{bot.command_prefix}inviteme** command again with the correct info. \nThis will place you at the bottom of the invite queue.")
-                    elif status == '3' and emailformember != str(email).lower():
-                        await dmChannel.send(f"You have already accepted an invite for a different email address.\nIf you are trying to get an invite for someone else, please have them join the discord server.")
-                    elif status == '3' and emailformember == str(email).lower():
-                        await dmChannel.send(f"You have already accepted an invite for that email address.\nIf you are having problems, please message the admin or post in the **problems** channel")
-                    elif status == '4' and emailformember == str(email).lower():
-                        await dmChannel.send(f"You have already been queued for an invite to that email address.\nTo see your place in the queue try **{bot.command_prefix}queuestatus**")
-                    elif status == '4' and emailformember != str(email).lower():
-                        await dmChannel.send(f"You have already been added to the queue but for a different email address.\nIf this was caused by a typo, leave the discord server, then rejoin and use the **{bot.command_prefix}inviteme** command again.\nThis will reset your position in the queue.\nIf you are trying to queue someone else, instead have them join the discord server and do it themselves.")
-                    else:
-                        await dmChannel.send(f"Something went wrong. Please try again later.\nIf the problem persists, please conact the admin or post in the **problems** channel.")
-                        logging.error(f"Something went wrong getting the status of the users and handling the invite. message: {str(ctx.message)}")
+                            await dmChannel.send(f"Something went wrong. Please try again later.\nIf the problem persists, please conact the admin or post in the **problems** channel.")
+                            logging.error(f"Something went wrong getting the status of the users and handling the invite. message: {str(ctx.message)}")
+                else:
+                    await dmChannel.send(f"That email was invalid. Make sure you are using the same email with which you created your https://plex.tv account")
         else:
             await ctx.author.send(f"Please do not use the inviteme command in public channels.")
             try:
@@ -1942,6 +1978,7 @@ if botConfigured:
         else:
             await ctx.reply(f"You have to use this command in a DM with the bot")
     # endregion
+
     # region admin commands
     @bot.command(description="ADMIN")
     async def listadmincommands(ctx):
@@ -2038,7 +2075,7 @@ if botConfigured:
                     await dmChannel.send(f"**ServerName:** {str(server[1])}\n**ServerURL:** {str(server[2])}\n**ServerToken:** {str(server[3])}\n**ChecksInactivity:** {str(server[4])}\n**InvitedDiscordRoleName:** {str(server[5])}\n**TautulliURL:** {str(server[6])}\n**TautulliAPIKey:** {str(server[7])}\n**InactivityLimit:** {str(server[8])}\n**InviteAcceptanceLimit:** {str(server[9])}\n**UserCount:** cannot be counted right now.\n--------")
         
     @bot.command(description="ADMIN")
-    async def listplexserverswithoutcount(ctx):
+    async def listplexserversdbonly(ctx):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
@@ -2082,7 +2119,7 @@ if botConfigured:
                 logging.error(f"Error from listallpendinginvites {str(e)}")
     
     @bot.command(description="ADMIN")
-    async def dbinfodiscordid(ctx, discordid=None):
+    async def dbinfo(ctx, discordid=None):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
@@ -2099,7 +2136,7 @@ if botConfigured:
                     await dmChannel.send(f"**discordID:**  {str(dbinfo[1])}\n**discordUsername:**  {str(dbinfo[2])}\n**discordServerNickname:**  {str(dbinfo[3])}\n**plexUsername:**  {str(dbinfo[4])}\n**plexEmailAddress:**  {str(dbinfo[5])}\n**serverName:**  {str(dbinfo[6])}\n**dateRemoved:**  {str(dbinfo[7])}\n**dateInvited:**  {str(dbinfo[8])}\n**dateQueued:**  {str(dbinfo[9])}\n**status:**  {str(dbinfo[10])}\n**plexUserID:**  {str(dbinfo[11])}")
 
     @bot.command(description="ADMIN")
-    async def updateinactivitydays(ctx, servername=None, numberdays=None):
+    async def updateinactivity(ctx, servername=None, numberdays=None):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
@@ -2115,7 +2152,7 @@ if botConfigured:
                 await dmChannel.send(f"Inactivity updated to {str(serverConfig[8])} days for server: {str(serverConfig[1])}")
 
     @bot.command(description="ADMIN")
-    async def updateinviteacceptancelimit(ctx, servername=None, limitdays=None):
+    async def updateinviteacceptlimit(ctx, servername=None, limitdays=None):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
@@ -2211,7 +2248,7 @@ if botConfigured:
                 await dmChannel.send(f"Activity check updated to {str(serverConfig[4])} for server: {str(serverConfig[1])}")
 
     @bot.command(description="ADMIN")
-    async def updateemailfordiscordid(ctx, discordid=None, newemail=None):
+    async def updateemail(ctx, discordid=None, newemail=None):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
@@ -2227,7 +2264,7 @@ if botConfigured:
                 await dmChannel.send(f"Email updated to {str(userinfo[5])} for user: {str(userinfo[1])}")
 
     @bot.command(description="ADMIN")
-    async def watchtimefordiscordid(ctx, discordid=None):
+    async def watchtime(ctx, discordid=None):
         dmChannel = await ctx.author.create_dm()
         adminID = getAdminDiscordID(DB_CONNECTION)
         if adminID == str(ctx.author.id):
