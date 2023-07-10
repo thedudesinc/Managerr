@@ -132,3 +132,4 @@ dmypy.json
 bot.config
 plexmanager.log
 BotDB.db
+.idea
