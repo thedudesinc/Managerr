@@ -687,7 +687,7 @@ def inviteEmailToPlex(conn, email, values):
     if inviteSuccess:
         try:
             # change to an if else. If the user already exists, update them to invited.
-            # if they dont already exist, then insert.
+            # if they dont already exist, then insert.a
             with DB_CONNECTION:
                 uValues = (str(values[0]), str(values[1]), str(values[2]), 'UNKNOWN', email, str(values[3]),
                            str(date1), '2')
