@@ -572,13 +572,13 @@ def updatePlexIDForPlexEmailAddress(conn, email, plexID):
     return
 
 
-def updateQueuedUserToInvited(conn, values):
+def updateUserToInvited(conn, values):
     try:
         cur = conn.cursor()
         cur.execute('UPDATE Users SET serverName =(?), dateInvited =(?), status =(?) WHERE discordID =(?)',
                     (str(values[1]), str(values[2]), str(values[3]), str(values[0]),))
     except Exception as e:
-        logging.error('Exception from updateQueuedUserToInvited: ' + str(e))
+        logging.error('Exception from updateUserToInvited: ' + str(e))
     return
 
 
@@ -685,15 +685,23 @@ def inviteEmailToPlex(conn, email, values):
         logging.error('Exception from inviteEmailToPlex: ' + str(e))
         inviteSuccess = False
     if inviteSuccess:
-        try:
-            # change to an if else. If the user already exists, update them to invited.
-            # if they dont already exist, then insert.a
-            with DB_CONNECTION:
-                uValues = (str(values[0]), str(values[1]), str(values[2]), 'UNKNOWN', email, str(values[3]),
-                           str(date1), '2')
-                insertInvitedUser(DB_CONNECTION, uValues)
-        except Exception as e:
-            logging.debug('Exception from within invite success: ' + str(e))
+        with DB_CONNECTION:
+            exists = checkDiscordIDExists(DB_CONNECTION, str(values[0]))
+        if exists:
+            try:
+                with DB_CONNECTION:
+                    uValues = (str(values[0]), str(values[3]), str(datetime.datetime.now()), '2')
+                    updateUserToInvited(DB_CONNECTION, uValues)
+            except Exception as e:
+                logging.error(f"exception updating user to invited. Exception: {str(e)}")
+        else:
+            try:
+                with DB_CONNECTION:
+                    uValues = (str(values[0]), str(values[1]), str(values[2]), 'UNKNOWN', email, str(values[3]),
+                               str(date1), '2')
+                    insertInvitedUser(DB_CONNECTION, uValues)
+            except Exception as e:
+                logging.debug('Exception from within invite success: ' + str(e))
     else:
 
         print("invite success is not true for some reason")
@@ -729,7 +737,7 @@ async def inviteQueuedEmailToPlex(conn, discordID, serverName, email, guildID):
             serverDiscordRole = rowTuple[5]
             with DB_CONNECTION:
                 uValues = (discordID, serverName, str(date1), '2')
-                updateQueuedUserToInvited(DB_CONNECTION, uValues)
+                updateUserToInvited(DB_CONNECTION, uValues)
                 # await addRoleForDiscordID(DB_CONNECTION, serverDiscordRole, discordID, guildID, bot)
         except Exception as e:
             logging.debug('Exception from within invite success: ' + str(e))
