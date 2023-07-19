@@ -29,6 +29,7 @@ ANNOUNCEMENT_CHANNEL_ID = int(config['botconfig']['announcementchannelid'])
 database = config['botconfig']['databasename']
 DB_CONNECTION = None
 botConfigured = None
+# thing
 # endregion
 
 # region METHODS
