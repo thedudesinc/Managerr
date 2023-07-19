@@ -15,6 +15,7 @@ import os
 import io
 from io import StringIO
 import configparser
+from discord.utils import get
 
 # region PREBOT
 # region VARIABLES
@@ -685,6 +686,8 @@ def inviteEmailToPlex(conn, email, values):
         inviteSuccess = False
     if inviteSuccess:
         try:
+            # change to an if else. If the user already exists, update them to invited.
+            # if they dont already exist, then insert.
             with DB_CONNECTION:
                 uValues = (str(values[0]), str(values[1]), str(values[2]), 'UNKNOWN', email, str(values[3]),
                            str(date1), '2')
@@ -1341,28 +1344,37 @@ async def frequent():
             if openSpots > 0 and openSpots < 9000 and len(usersQueued) > 0:
                 serverName = plex[1]
                 openSpotCountForServer = (100 - (getUserCountForPlexServerName(DB_CONNECTION, serverName)))
-                i = 1
+                i = 0
                 while i < openSpotCountForServer:
                     i += 1
+                    # don't have to act on the number anymore, because the user either gets invited with status change, or removed from the db and wont return in the next call.
                     try:
                         with DB_CONNECTION:
                             discordIDForOldestQueued = getDiscordIDForOldestQueuedUser(DB_CONNECTION)
                             emailForOldestQueued = getEmailForDiscordID(DB_CONNECTION, discordIDForOldestQueued)
                         if discordIDForOldestQueued != '':
-                            member = discord.utils.get(thisGuild.members, id=int(discordIDForOldestQueued))
+                            thisGuild = await bot.fetch_guild(GUILD_ID)
+                            try:
+                                member = get(bot.get_all_members(), id=int(discordIDForOldestQueued))
+                                # member = discord.utils.get(thisGuild.members, id=int(discordIDForOldestQueued))
+                            except Exception as e:
+                                logging.error(f"Exception trying to get member from discord. Probably accessing discord incorrectly. Error: {str(e)}")
                             if member is not None:
                                 await member.create_dm()
                                 successBool = await inviteQueuedEmailToPlex(DB_CONNECTION, discordIDForOldestQueued, serverName, emailForOldestQueued, GUILD_ID)
-                                thisGuild = bot.get_guild(GUILD_ID)
                                 if successBool:
-                                    # member = discord.utils.get(thisGuild.members, id=int(discordID))
-                                    member.dm_channel.send(f"There were open spots and you have been invited to server: {serverName}")
-                                # else DM them/admin that something went wrong.
+                                    try:
+                                        await member.dm_channel.send(f"There were open spots and you have been invited to server: {serverName}")
+                                        logging.debug(f"invited a queued user! name: {member.name}, email: {emailForOldestQueued}")
+                                    except Exception as e:
+                                        logging.error(f"Found the member and invite was success, but ISSUE with sending them message. exception: {str(e)}")
                                 else:
                                     ownerID = discord.Guild.owner_id
-                                    # member = discord.utils.get(thisGuild.members, id=ownerID)
-                                    member.dm_channel.send(f"Tried to invite this queued email: {emailForOldestQueued}, for this discordID: {discordIDForOldestQueued}. But something went wrong.")
-                                # if DMing the admin include discord ID and email address value
+                                    await member.dm_channel.send(f"Tried to invite this queued email: {emailForOldestQueued}, for this discordID: {discordIDForOldestQueued}. But something went wrong.")
+                            else:
+                                with DB_CONNECTION:
+                                    deleteFromDBForDiscordID(DB_CONNECTION, discordIDForOldestQueued)
+                                logging.debug(f"Member is not seen as a member of this server anymore. Removing them from the database. member: {str(member)}")
                     except Exception as e:
                         with DB_CONNECTION:
                             recordBotActionHistory(DB_CONNECTION, 'something went wrong inviting user: ' + discordIDForOldestQueued + ' email: ' + emailForOldestQueued + ' error: ' + str(e), 'AUTOMATIC')
@@ -1440,7 +1452,6 @@ async def infrequent():
                 # get invited date for user
                 with DB_CONNECTION:
                     invitedDate = getDateInvitedByEmail(DB_CONNECTION, email)
-                # preset invite less than remove limit to false and no invited date to true.
                 # invite less than remove limit means they have been invited sooner than the inactive remove limit amount of time.
                 # ex invited 8 days ago with remove limit of 14 days.
                 inviteLessThanRemoveLimitOLD = False
@@ -1535,7 +1546,7 @@ async def infrequent():
                                         updateBotActionHistory(DB_CONNECTION, valuesToSend)
                                         removeServerNameForDiscordID(DB_CONNECTION, discordID)
                                         updateRemovalDateForDiscordID(DB_CONNECTION, discordID)
-                                    # run tautulli command to delete user.
+                                    # run tautulli command to delete user history.
                                     uidString = str(UID)
                                     PARAMS1 = {
                                         'cmd': 'delete_all_user_history',
@@ -1557,7 +1568,8 @@ async def infrequent():
         embed.set_author(name=f"Managerr", icon_url="https://assets.thepebbles.tech/pics/managerricon.jpg")
         embed.set_thumbnail(url="https://assets.thepebbles.tech/pics/managerricon.jpg")
         embed.add_field(name="Inactive users removed: ", value=f"{str(len(listofusersremoved))}", inline=True)
-        await announcementchannel.send(embed=embed)
+        # await announcementchannel.send(embed=embed)
+        logging.debug(f"Number of inactive users removed. {str(len(listofusersremoved))}. Does that seem right?")
     except Exception as e:
         logging.error(f"Error sending user removal count announcement message. Exception: {str(e)}")
     logging.debug(f'infrequent loop is Finished: ' + str(datetime.datetime.now()))
@@ -1576,6 +1588,8 @@ if botConfigured:
         thisGuild = bot.get_guild(GUILD_ID)
         await bot.change_presence(activity=game)
         await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+        frequent.start()
+        infrequent.start()
 else:
     @bot.event
     async def on_ready():
@@ -1860,6 +1874,16 @@ if botConfigured:
             recordCommandHistory(DB_CONNECTION, values)
         await ctx.reply(f"https://uptime.thejones.tech/status/pmbp")
 
+    @bot.command(description="PUBLIC")
+    async def monthlymadlad(ctx):
+        with DB_CONNECTION:
+            values = (f"{bot.command_prefix}uptime", str(ctx.channel), str(ctx.author.name), str(ctx.author.id),
+                      str(datetime.datetime.now()), str(ctx.message.content))
+            recordCommandHistory(DB_CONNECTION, values)
+        dmChannel = await ctx.author.create_dm()
+        await dmChannel.send(f"The monthly madlad role can be had by signing up for a monthly donation at https://ko-fi.com/jomack16\n Once you have the role you will see the **#monthlymadlad** channel. \nYou should receive a message from the <@1129586535541518377> bot to work out the media server invitation.\n There are more details/benefits in the channel, but the primary one is that there is no inactivity removal for monthylymadlads!")
+
+    # region user Direct message commands
     # region user Direct message commands
     @bot.command(description="DM ONLY")
     async def inviteme(ctx, email=None):
@@ -2496,8 +2520,8 @@ else:
 
 
 async def main():
-    frequent.start()
-    infrequent.start()
+    # frequent.start()
+    # infrequent.start()
     await bot.start(TOKEN)
 
 asyncio.run(main())
