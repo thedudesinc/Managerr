@@ -20,7 +20,10 @@ from discord.utils import get
 # region PREBOT
 # region VARIABLES
 config = configparser.ConfigParser()
-config.read("bot.config")
+try:
+    config.read("bot.config")
+except Exception as e:
+    print(f"error reading the config file, does it exist?: {str(e)}")
 GUILD_ID = int(config['botconfig']['guildid'])
 # GUILD_ID = 1045433182822072390
 # ANNOUNCEMENT_CHANNEL_ID = 1045449645876334724
