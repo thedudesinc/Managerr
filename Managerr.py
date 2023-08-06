@@ -527,6 +527,7 @@ def updateServerNameForDiscordID(conn, discordid, newservername):
 
 
 def updateStatusForDiscordID(conn, discordID, status):
+    # print(f"working on these values: discordID, status: {str(discordID)}, {str(status)}")
     try:
         cur = conn.cursor()
         cur.execute('UPDATE Users SET status =(?) WHERE discordID =(?)', (str(status), str(discordID),))
@@ -1403,6 +1404,7 @@ async def infrequent():
         checksList = getListOfPlexThatChecks(DB_CONNECTION)
     listofusersremoved = []
     for plex in checksList:
+        print(f"Checking plex {str(plex)}")
         localSession = Session()
         localSession.verify = False
         if not localSession.verify:
@@ -1522,11 +1524,15 @@ async def infrequent():
                                 try:
                                     with DB_CONNECTION:
                                         discordID = getDiscordIDForEmail(DB_CONNECTION, str(PLEX_USERS_EMAIL[UID]))
+                                        # print(f"line 1526: discordID: {str(discordID)}")
                                         dbInfoForDiscordID = getDBInfoForDiscordID(DB_CONNECTION, discordID)
+                                        # print(f"line 1528: dbInfoForDiscordID: {str(dbInfoForDiscordID)}")
                                         serverName = dbInfoForDiscordID[6]
                                         plexServerConfigInfo = getPlexServerConfigInfoForName(DB_CONNECTION, serverName)
+                                        # print(f"line 1528: plexServerConfigInfo: {str(plexServerConfigInfo)}")
                                         # invitedRoleName = plexServerConfigInfo[5]
                                         botConfigInfo = getBotConfigurationInfo(DB_CONNECTION)
+                                        # print(f"line 1528: botConfigInfo: {str(botConfigInfo)}")
                                         # removedRoleName = botConfigInfo[4]
                                 except Exception as e2:
                                     mismatch = True
@@ -1535,7 +1541,14 @@ async def infrequent():
                                 if mismatch == False:
                                     guild = await bot.fetch_guild(GUILD_ID)
                                     dmmsg = ''
-                                    member = await guild.fetch_member(int(discordID))
+                                    # print(f"line 1544: before acquiring member")
+                                    # https://discordpy.readthedocs.io/en/latest/api.html?highlight=fetch_member#discord.Guild.fetch_member
+                                    try:
+                                        member = await guild.fetch_member(int(discordID))
+                                    except Exception as e:
+                                        member = None
+                                        logging.error(f"Exception from acquiring member: {str(e)}")
+                                    # print(f"line 1546: member acquired = {str(member)}")
                                     # member = discord.utils.get(thisGuild.members, id=int(discordID))
                                     if member is not None:
                                         await member.create_dm()
@@ -1549,13 +1562,16 @@ async def infrequent():
                                         except Exception as e:
                                             logging.error(f"Error trying to send direct message to removed member. {str(e)}")
                                     with DB_CONNECTION:
+                                        # print(f"going to use function updateStatusForDiscordID")
                                         updateStatusForDiscordID(DB_CONNECTION, str(discordID), 0)
+                                        # print(f"line 1558: I made it past updateStatusForDiscordID")
                                         valuesToSend = ("Inactivity removal. dmmsg" + dmmsg, str(datetime.datetime.now()),
                                                         "AUTOMATIC")
                                         updateBotActionHistory(DB_CONNECTION, valuesToSend)
                                         removeServerNameForDiscordID(DB_CONNECTION, discordID)
                                         updateRemovalDateForDiscordID(DB_CONNECTION, discordID)
                                     # run tautulli command to delete user history.
+                                    # print(f"line 1564: I made it pas the DB_Connection section of mismatch check...")
                                     uidString = str(UID)
                                     PARAMS1 = {
                                         'cmd': 'delete_all_user_history',
@@ -1570,6 +1586,7 @@ async def infrequent():
                                 else:
                                     # print("mismatch was true so on to the next one.")
                                     logging.debug(f"mismatch was true so on to the next one.")
+        print(f"Finished checking plex {str(plex)}")
     # endregion
     try:
         announcementchannel = thisGuild.get_channel(ANNOUNCEMENT_CHANNEL_ID)
